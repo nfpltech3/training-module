@@ -34,7 +34,7 @@ python -m venv venv
 pip install -r requirements.txt
 
 # Start the API server
-python -m uvicorn app.main:app --reload
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 *The API will be available at http://localhost:8000. On the first startup, it will automatically generate the `nagarkot.db` file alongside the seed data.*
 
@@ -48,10 +48,10 @@ cd frontend
 npm install
 
 # Start the Vite development server
-npm run dev
+npm run dev -- --host
 ```
 *The client app will be available at http://localhost:5173.*
-
+for phone, http://192.168.1.23:5173
 ---
 
 ## 🔑 Default Admin Credentials

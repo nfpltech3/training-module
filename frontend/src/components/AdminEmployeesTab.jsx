@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import { getUsers, createUser, adminUpdateUser, getDepartments } from '../lib/api';
+import { getUsers, createUser, adminUpdateUser, getDepartments, getRoles } from '../lib/api';
 import { Plus, UserPlus, Save, Loader2, AlertCircle, RefreshCw, X } from 'lucide-react';
 
 export default function AdminEmployeesTab() {
     const [users, setUsers] = useState([]);
     const [departments, setDepartments] = useState([]);
+    const [roles, setRoles] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
 
@@ -16,6 +17,7 @@ export default function AdminEmployeesTab() {
         password: '',
         full_name: '',
         department_id: '',
+        role_id: '',
     });
     const [isCreating, setIsCreating] = useState(false);
 
@@ -31,12 +33,21 @@ export default function AdminEmployeesTab() {
     const fetchData = async () => {
         try {
             setLoading(true);
-            const [usersRes, deptsRes] = await Promise.all([getUsers(), getDepartments()]);
-            const filteredDepts = deptsRes.data.filter(d => !d.is_global);
+            const [usersRes, deptsRes, rolesRes] = await Promise.all([getUsers(), getDepartments(), getRoles()]);
+            
+            // UPDATED: Removed the .filter(d => !d.is_global) since we deleted that concept from the database!
+            const fetchedDepts = deptsRes.data; 
+            
             setUsers(usersRes.data);
-            setDepartments(filteredDepts);
-            if (filteredDepts.length > 0) {
-                setCreateForm(prev => ({ ...prev, department_id: filteredDepts[0].id }));
+            setDepartments(fetchedDepts);
+            setRoles(rolesRes.data);
+            
+            if (fetchedDepts.length > 0 || rolesRes.data.length > 0) {
+                setCreateForm(prev => ({
+                    ...prev,
+                    department_id: fetchedDepts.length > 0 ? fetchedDepts[0].id : '',
+                    role_id: rolesRes.data.length > 0 ? rolesRes.data.find(r => r.name === 'EMPLOYEE')?.id || rolesRes.data[0].id : ''
+                }));
             }
             setError('');
         } catch (err) {
@@ -66,8 +77,8 @@ export default function AdminEmployeesTab() {
         setEditForm({
             full_name: user.full_name,
             email: user.email,
-            department_id: user.department_id,
-            role: user.role,
+            department_id: user.department_id || '',
+            role_id: user.role.id,
             is_active: user.is_active,
             password: '', // only send if changing
         });
@@ -161,12 +172,11 @@ export default function AdminEmployeesTab() {
                                         </td>
                                         <td className="p-3">
                                             <select
-                                                value={editForm.role}
-                                                onChange={e => setEditForm({ ...editForm, role: e.target.value })}
+                                                value={editForm.role_id}
+                                                onChange={e => setEditForm({ ...editForm, role_id: e.target.value })}
                                                 className="w-full px-3 py-1.5 border border-slate-300 rounded-lg outline-none focus:border-blue-500 bg-white"
                                             >
-                                                <option value="USER">User</option>
-                                                <option value="ADMIN">Admin</option>
+                                                {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
                                             </select>
                                         </td>
                                         <td className="p-3 flex items-center gap-2 justify-center">
@@ -198,8 +208,8 @@ export default function AdminEmployeesTab() {
                                     <td className="p-4 text-slate-500">{user.email}</td>
                                     <td className="p-4 text-slate-600">{user.department?.name || '—'}</td>
                                     <td className="p-4">
-                                        <span className={`px-2 py-1 rounded-md text-xs font-bold ${user.role === 'ADMIN' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600'}`}>
-                                            {user.role}
+                                        <span className={`px-2 py-1 rounded-md text-xs font-bold ${user.role?.name === 'ADMIN' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600'}`}>
+                                            {user.role?.name}
                                         </span>
                                     </td>
                                     <td className="p-4 text-center">
@@ -244,8 +254,13 @@ export default function AdminEmployeesTab() {
                                 <input type="text" required value={createForm.password} onChange={e => setCreateForm({ ...createForm, password: e.target.value })} className="w-full px-3 py-2 border rounded-xl" />
                             </div>
                             <div>
+                                <label className="block text-sm font-bold text-slate-600 mb-1">Role</label>
+                                <select value={createForm.role_id} onChange={e => setCreateForm({ ...createForm, role_id: e.target.value })} className="w-full px-3 py-2 border rounded-xl bg-white mb-4">
+                                    {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                                </select>
                                 <label className="block text-sm font-bold text-slate-600 mb-1">Department</label>
                                 <select value={createForm.department_id} onChange={e => setCreateForm({ ...createForm, department_id: e.target.value })} className="w-full px-3 py-2 border rounded-xl bg-white">
+                                    <option value="">-- No Department (Client) --</option>
                                     {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                                 </select>
                             </div>

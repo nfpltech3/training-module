@@ -1,7 +1,7 @@
 from pydantic import BaseModel, EmailStr
 from typing import Optional, List
 from datetime import datetime
-from .models import RoleEnum, ContentTypeEnum
+from .models import ModuleTypeEnum, ContentTypeEnum
 
 
 # --- Auth Schemas ---
@@ -16,11 +16,18 @@ class TokenResponse(BaseModel):
     user: "UserResponse"
 
 
+# --- Role Schemas ---
+class RoleResponse(BaseModel):
+    id: str
+    name: str
+
+    class Config:
+        from_attributes = True
+
+
 # --- Department Schemas ---
 class DepartmentBase(BaseModel):
     name: str
-    is_global: bool = False
-
 
 class DepartmentCreate(DepartmentBase):
     pass
@@ -28,7 +35,6 @@ class DepartmentCreate(DepartmentBase):
 
 class DepartmentUpdate(BaseModel):
     name: Optional[str] = None
-    is_global: Optional[bool] = None
 
 
 class DepartmentResponse(DepartmentBase):
@@ -43,7 +49,8 @@ class UserBase(BaseModel):
     email: EmailStr
     username: Optional[str] = None
     full_name: str
-    department_id: str
+    department_id: Optional[str] = None
+    role_id: str
 
 
 class UserCreate(UserBase):
@@ -61,13 +68,13 @@ class AdminUserUpdate(BaseModel):
     password: Optional[str] = None
     full_name: Optional[str] = None
     department_id: Optional[str] = None
-    role: Optional[RoleEnum] = None
+    role_id: Optional[str] = None
     is_active: Optional[bool] = None
 
 
 class UserResponse(UserBase):
     id: str
-    role: RoleEnum
+    role: RoleResponse
     department: Optional[DepartmentResponse] = None
     is_active: bool
     created_at: datetime
@@ -117,28 +124,34 @@ class ContentResponse(ContentBase):
 class ModuleBase(BaseModel):
     title: str
     description: Optional[str] = None
-    department_id: str
+    module_type: ModuleTypeEnum = ModuleTypeEnum.DEPARTMENT_TRAINING
+    department_ids: List[str] = []
+    role_ids: List[str] = []
     sequence_index: int = 0
-
 
 class ModuleCreate(ModuleBase):
     pass
 
-
 class ModuleUpdate(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
-    department_id: Optional[str] = None
+    module_type: Optional[ModuleTypeEnum] = None
+    department_ids: Optional[List[str]] = None
+    role_ids: Optional[List[str]] = None
     sequence_index: Optional[int] = None
     is_active: Optional[bool] = None
 
-
-class ModuleResponse(ModuleBase):
+class ModuleResponse(BaseModel):
     id: str
-    department: Optional[DepartmentResponse] = None
+    title: str
+    description: Optional[str] = None
+    module_type: ModuleTypeEnum
+    sequence_index: int
+    departments: List[DepartmentResponse] = []
+    roles: List[RoleResponse] = []
     is_active: bool
     created_at: datetime
-    content_items: List[ContentResponse] = []
+    content_items: List['ContentResponse'] = []
 
     class Config:
         from_attributes = True

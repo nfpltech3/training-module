@@ -1,7 +1,6 @@
 /**
  * Auth Context — provides JWT token management, login/logout, and user state.
- * 
- * Token is stored in localStorage for persistence across page refreshes.
+ * * Token is stored in localStorage for persistence across page refreshes.
  * The user object is cached alongside the token to avoid extra API calls.
  */
 import { createContext, useContext, useState, useCallback, useMemo } from 'react';
@@ -48,7 +47,8 @@ export function AuthProvider({ children }) {
         token: auth.token,
         user: auth.user,
         isAuthenticated: !!auth.token,
-        isAdmin: auth.user?.role === 'ADMIN',
+        // UPDATED: Now correctly checks the name property of the role object
+        isAdmin: auth.user?.role?.name === 'ADMIN',
         login,
         logout,
         updateUser,

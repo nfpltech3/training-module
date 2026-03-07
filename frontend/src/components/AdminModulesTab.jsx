@@ -1,32 +1,36 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
     getModules, createModule, updateModule, reorderModule,
-    getDepartments, createContent, updateContent, reorderContent, uploadDocument
+    getDepartments, getRoles, createContent, updateContent, reorderContent, uploadDocument
 } from '../lib/api';
 import {
-    Plus, Video, FileText, ArrowUp, ArrowDown, ChevronDown, ChevronUp, Loader2, AlertCircle, Edit, X
+    Plus, Video, FileText, ArrowUp, ArrowDown, ChevronDown, ChevronUp, Loader2, Edit, X
 } from 'lucide-react';
 
 export default function AdminModulesTab() {
     const [modules, setModules] = useState([]);
     const [departments, setDepartments] = useState([]);
+    const [roles, setRoles] = useState([]);
     const [loading, setLoading] = useState(true);
 
-    // Selection State for the new Flow
+    // Selected Dept purely for filtering the Module View in Step 2
     const [selectedDeptId, setSelectedDeptId] = useState('');
     const [selectedModuleId, setSelectedModuleId] = useState('');
-
-    // Expand State for Roster
     const [expandedModules, setExpandedModules] = useState(new Set());
 
     // Forms State
     const [isCreatingModule, setIsCreatingModule] = useState(false);
+    const [isEditingModule, setIsEditingModule] = useState(false); // NEW
     const [isCreatingContent, setIsCreatingContent] = useState(false);
     const [isEditingContent, setIsEditingContent] = useState(false);
 
     // Modals
     const [showModuleModal, setShowModuleModal] = useState(false);
-    const [newModuleForm, setNewModuleForm] = useState({ title: '', description: '' });
+    const [newModuleForm, setNewModuleForm] = useState({ title: '', description: '', module_type: 'Department Training', department_ids: [], role_ids: [] });
+
+    // NEW: Edit Module Modal State
+    const [showEditModuleModal, setShowEditModuleModal] = useState(false);
+    const [editModuleForm, setEditModuleForm] = useState({ id: null, title: '', description: '', module_type: 'Department Training', department_ids: [], role_ids: [] });
 
     const [showEditContentModal, setShowEditContentModal] = useState(false);
     const [editContentForm, setEditContentForm] = useState({ id: null, title: '', description: '', content_type: 'VIDEO', embed_url: '' });
@@ -44,11 +48,11 @@ export default function AdminModulesTab() {
     const fetchData = async () => {
         try {
             setLoading(true);
-            const [modRes, deptRes] = await Promise.all([getModules(), getDepartments()]);
+            const [modRes, deptRes, rolesRes] = await Promise.all([getModules(), getDepartments(), getRoles()]);
             setModules(modRes.data);
             setDepartments(deptRes.data);
+            setRoles(rolesRes.data);
 
-            // Auto-select first dept if none selected
             if (!selectedDeptId && deptRes.data.length > 0) {
                 setSelectedDeptId(deptRes.data[0].id);
             }
@@ -59,36 +63,72 @@ export default function AdminModulesTab() {
         }
     };
 
-    // Derived state
+    // Derived state: Modules that belong to the selected department
     const deptModules = useMemo(() => {
         if (!selectedDeptId) return [];
-        return modules.filter(m => m.department_id === selectedDeptId);
+        return modules.filter(m => m.departments.some(d => d.id === selectedDeptId));
     }, [modules, selectedDeptId]);
 
-    // Handle Dept Change
     const handleDeptChange = (e) => {
         setSelectedDeptId(e.target.value);
-        setSelectedModuleId(''); // Reset module when dept changes
+        setSelectedModuleId('');
     };
 
+    // --- MODULE HANDLERS ---
     const handleCreateModule = async (e) => {
         e.preventDefault();
-        if (!newModuleForm.title || !selectedDeptId) return;
+        if (!newModuleForm.title || newModuleForm.role_ids.length === 0) return;
         try {
             setIsCreatingModule(true);
-            const res = await createModule({ ...newModuleForm, department_id: selectedDeptId });
-            setNewModuleForm({ title: '', description: '' });
+            const res = await createModule(newModuleForm);
+            setNewModuleForm({ title: '', description: '', module_type: 'Department Training', department_ids: [], role_ids: [] });
             setShowModuleModal(false);
             await fetchData();
-            setSelectedModuleId(res.data.id); // Auto select the new module
+            setSelectedModuleId(res.data.id);
             setExpandedModules(prev => new Set(prev).add(res.data.id));
         } catch (err) {
-            alert("Failed to create module");
+            alert("Failed to create module.");
         } finally {
             setIsCreatingModule(false);
         }
     };
 
+    const startEditModule = (module) => {
+        setEditModuleForm({
+            id: module.id,
+            title: module.title,
+            description: module.description || '',
+            module_type: module.module_type || 'Department Training',
+            department_ids: module.departments?.map(d => d.id) || [],
+            role_ids: module.roles?.map(r => r.id) || []
+        });
+        setShowEditModuleModal(true);
+    };
+
+    const handleEditModuleSubmit = async (e) => {
+        e.preventDefault();
+        if (!editModuleForm.title || editModuleForm.role_ids.length === 0) return;
+        try {
+            setIsEditingModule(true);
+            const { id, ...payload } = editModuleForm;
+            await updateModule(id, payload);
+            setShowEditModuleModal(false);
+            await fetchData();
+        } catch (err) {
+            alert("Failed to update module.");
+        } finally {
+            setIsEditingModule(false);
+        }
+    };
+
+    const handleReorderModule = async (id, direction) => {
+        try {
+            await reorderModule(id, direction);
+            await fetchData();
+        } catch (err) { alert("Reorder failed"); }
+    };
+
+    // --- CONTENT HANDLERS ---
     const handleCreateContent = async (e) => {
         e.preventDefault();
         if (!contentForm.title || !selectedModuleId) return;
@@ -99,18 +139,11 @@ export default function AdminModulesTab() {
                 const uploadRes = await uploadDocument(uploadFile);
                 documentUrl = uploadRes.data.document_url;
             }
-
-            const payload = {
-                ...contentForm,
-                module_id: selectedModuleId,
-                document_url: documentUrl,
-            };
-
-            await createContent(payload);
+            await createContent({ ...contentForm, module_id: selectedModuleId, document_url: documentUrl });
             setContentForm({ title: '', description: '', content_type: 'VIDEO', embed_url: '' });
             setUploadFile(null);
             await fetchData();
-            setExpandedModules(prev => new Set(prev).add(selectedModuleId)); // Ensure expanded
+            setExpandedModules(prev => new Set(prev).add(selectedModuleId));
             alert("Content added successfully!");
         } catch (err) {
             alert("Failed to add content");
@@ -137,13 +170,10 @@ export default function AdminModulesTab() {
         try {
             setIsEditingContent(true);
             const payload = { ...editContentForm };
-
-            // If they uploaded a new document while editing
             if (payload.content_type === 'DOCUMENT' && uploadFile) {
                 const uploadRes = await uploadDocument(uploadFile);
                 payload.document_url = uploadRes.data.document_url;
             }
-
             await updateContent(payload.id, payload);
             setShowEditContentModal(false);
             setUploadFile(null);
@@ -155,38 +185,22 @@ export default function AdminModulesTab() {
         }
     };
 
-    const handleReorderModule = async (id, direction) => {
-        try {
-            await reorderModule(id, direction);
-            await fetchData();
-        } catch (err) {
-            alert("Reorder failed");
-        }
-    };
-
     const handleReorderContent = async (id, direction) => {
         try {
             await reorderContent(id, direction);
             await fetchData();
-        } catch (err) {
-            alert("Reorder failed");
-        }
+        } catch (err) { alert("Reorder failed"); }
     };
 
     const toggleModule = (id) => {
         setExpandedModules(prev => {
             const next = new Set(prev);
-            if (next.has(id)) next.delete(id);
-            else next.add(id);
+            if (next.has(id)) next.delete(id); else next.add(id);
             return next;
         });
     };
 
-    if (loading && modules.length === 0) {
-        return <div className="p-12 flex justify-center"><Loader2 className="w-8 h-8 animate-spin text-blue-600" /></div>;
-    }
-
-    const getDeptName = (id) => departments.find(d => d.id === id)?.name || 'Unknown';
+    if (loading && modules.length === 0) return <div className="p-12 flex justify-center"><Loader2 className="w-8 h-8 animate-spin text-blue-600" /></div>;
 
     return (
         <div className="space-y-10 pb-12 max-w-5xl">
@@ -201,19 +215,18 @@ export default function AdminModulesTab() {
                 </div>
 
                 <div className="p-6 md:p-8 space-y-8 bg-slate-50/50">
-
-                    {/* Flow Step 1: Department */}
+                    {/* Flow Step 1: Department Filter */}
                     <div>
                         <label className="flex items-center gap-2 text-sm font-bold text-slate-800 mb-2">
                             <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs">1</span>
-                            Select Department
+                            Filter Modules by Department
                         </label>
                         <select
                             value={selectedDeptId}
                             onChange={handleDeptChange}
                             className="w-full max-w-md px-4 py-2.5 border border-slate-300 rounded-xl bg-white outline-none focus:ring-2 focus:ring-blue-500 font-medium text-slate-700 shadow-sm"
                         >
-                            {departments.map(d => <option key={d.id} value={d.id}>{d.name} {d.is_global ? '(Global)' : ''}</option>)}
+                            {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                         </select>
                     </div>
 
@@ -235,7 +248,10 @@ export default function AdminModulesTab() {
                                 </select>
                                 <span className="text-sm font-bold text-slate-400">OR</span>
                                 <button
-                                    onClick={() => setShowModuleModal(true)}
+                                    onClick={() => {
+                                        setNewModuleForm({ title: '', description: '', module_type: 'Department Training', department_ids: [selectedDeptId], role_ids: [] });
+                                        setShowModuleModal(true);
+                                    }}
                                     className="px-5 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition shadow-sm w-full sm:w-auto"
                                 >
                                     + New Module
@@ -253,7 +269,6 @@ export default function AdminModulesTab() {
                             </label>
 
                             <form onSubmit={handleCreateContent} className="grid grid-cols-1 md:grid-cols-2 gap-5 bg-white p-6 border border-blue-100 rounded-2xl shadow-sm">
-
                                 <div className="md:col-span-2">
                                     <label className="block text-xs font-bold text-slate-500 uppercase mb-1 text-left">Title</label>
                                     <input type="text" required value={contentForm.title} onChange={e => setContentForm({ ...contentForm, title: e.target.value })} className="w-full px-3 py-2 border rounded-xl outline-none focus:border-blue-500" placeholder="E.g. Safety Guidelines 2024" />
@@ -279,11 +294,6 @@ export default function AdminModulesTab() {
                                     </div>
                                 )}
 
-                                <div className="md:col-span-2">
-                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1 text-left">Description (Optional)</label>
-                                    <textarea rows="2" value={contentForm.description} onChange={e => setContentForm({ ...contentForm, description: e.target.value })} className="w-full px-3 py-2 border rounded-xl resize-none outline-none focus:border-blue-500"></textarea>
-                                </div>
-
                                 <div className="md:col-span-2 flex justify-end">
                                     <button type="submit" disabled={isCreatingContent} className="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition disabled:opacity-60 flex items-center gap-2 shadow-md">
                                         {isCreatingContent ? <Loader2 className="w-5 h-5 animate-spin" /> : <Plus className="w-5 h-5" />}
@@ -308,7 +318,6 @@ export default function AdminModulesTab() {
 
                         return (
                             <div key={module.id} className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden transition-all text-left">
-                                {/* Module Header Bar */}
                                 <div className="p-4 flex flex-col md:flex-row items-center justify-between gap-4">
                                     <div className="flex-1 flex flex-col md:flex-row items-start md:items-center gap-4 w-full text-left">
                                         <button onClick={() => toggleModule(module.id)} className="p-2 border border-slate-300 rounded-lg hover:bg-slate-50 bg-white text-slate-600 shadow-sm shrink-0 flex w-full md:w-auto items-center justify-between md:justify-center">
@@ -317,13 +326,35 @@ export default function AdminModulesTab() {
                                         </button>
 
                                         <div>
-                                            <div className="flex items-center gap-2 flex-wrap text-left">
+                                            <div className="flex items-center gap-2 flex-wrap text-left mb-1">
                                                 <h4 className="font-bold text-lg text-slate-800 tracking-tight">{module.title}</h4>
-                                                <span className="px-2 py-0.5 bg-slate-100 text-slate-600 text-xs font-bold rounded-md">
-                                                    {getDeptName(module.department_id)}
-                                                </span>
+                                                
+                                                {/* NEW: Edit Module Button */}
+                                                <button onClick={() => startEditModule(module)} className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition" title="Edit Module Settings">
+                                                    <Edit className="w-4 h-4" />
+                                                </button>
+
+                                                <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 text-[10px] font-bold rounded-md uppercase tracking-wider ml-2">{module.module_type}</span>
+                                                <div className="flex gap-1 flex-wrap ml-2">
+                                                    {module.roles?.map(r => (
+                                                        <span key={r.id} className="px-2 py-0.5 bg-amber-100 border border-amber-200 text-amber-700 text-[10px] font-bold rounded-md uppercase tracking-wider">
+                                                            {r.name}
+                                                        </span>
+                                                    ))}
+                                                    {module.departments?.length === 0 ? (
+                                                        <span className="px-2 py-0.5 bg-green-100 border border-green-200 text-green-700 text-[10px] font-bold rounded-md uppercase tracking-wider">
+                                                            ALL DEPARTMENTS
+                                                        </span>
+                                                    ) : (
+                                                        module.departments?.map(d => (
+                                                            <span key={d.id} className="px-2 py-0.5 bg-slate-100 border border-slate-200 text-slate-600 text-[10px] font-bold rounded-md uppercase tracking-wider">
+                                                                {d.name}
+                                                            </span>
+                                                        ))
+                                                    )}
+                                                </div>
                                             </div>
-                                            <p className="text-sm text-slate-500 truncate mt-0.5">{module.description || 'No description'}</p>
+                                            <p className="text-slate-500 text-sm line-clamp-1">{module.description || 'No description provided.'}</p>
                                         </div>
                                     </div>
 
@@ -380,8 +411,6 @@ export default function AdminModulesTab() {
                 </div>
             </section>
 
-            {/* Modals */}
-
             {/* 1. New Module Modal */}
             {showModuleModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -393,20 +422,220 @@ export default function AdminModulesTab() {
                                 <label className="block text-sm font-bold text-slate-600 mb-1">Module Title</label>
                                 <input type="text" required value={newModuleForm.title} onChange={e => setNewModuleForm({ ...newModuleForm, title: e.target.value })} className="w-full px-3 py-2 border rounded-xl outline-none focus:border-blue-500" placeholder="e.g. Forklift Training" />
                             </div>
+
                             <div>
-                                <label className="block text-sm font-bold text-slate-600 mb-1">Description</label>
+                                <label className="block text-sm font-bold text-slate-600 mb-1">Module Type</label>
+                                <select value={newModuleForm.module_type} onChange={e => setNewModuleForm({ ...newModuleForm, module_type: e.target.value })} className="w-full px-3 py-2 border rounded-xl bg-white outline-none focus:border-blue-500">
+                                    <option value="Department Training">Department Training</option>
+                                    <option value="Client Training">Client Training</option>
+                                    <option value="On-Boarding">On-Boarding</option>
+                                </select>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                {/* Role Multi-select */}
+                                <div>
+                                    <label className="block text-sm font-bold text-slate-600 mb-2">Assign to Roles *</label>
+                                    <div className="space-y-2 max-h-48 overflow-y-auto border border-slate-200 rounded-xl p-3 bg-slate-50">
+                                        {roles.map(r => (
+                                            <label key={r.id} className="flex items-center gap-3 cursor-pointer p-1 hover:bg-slate-100 rounded-lg transition">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={newModuleForm.role_ids.includes(r.id)}
+                                                    onChange={(e) => {
+                                                        const checked = e.target.checked;
+                                                        setNewModuleForm(prev => ({
+                                                            ...prev,
+                                                            role_ids: checked
+                                                                ? [...prev.role_ids, r.id]
+                                                                : prev.role_ids.filter(id => id !== r.id)
+                                                        }))
+                                                    }}
+                                                    className="w-4 h-4 text-blue-600 rounded cursor-pointer"
+                                                />
+                                                <span className="text-sm text-slate-700 font-medium">{r.name}</span>
+                                            </label>
+                                        ))}
+                                    </div>
+                                    {newModuleForm.role_ids.length === 0 && <p className="text-xs text-red-500 font-bold mt-1">Select at least one role.</p>}
+                                </div>
+
+                                {/* Department Multi-select */}
+                                <div>
+                                    <label className="block text-sm font-bold text-slate-600 mb-2">Assign to Departments</label>
+                                    <div className="space-y-2 max-h-48 overflow-y-auto border border-slate-200 rounded-xl p-3 bg-slate-50">
+                                        
+                                        <label className="flex items-center gap-3 cursor-pointer p-1 hover:bg-slate-200 bg-slate-100 rounded-lg transition border border-slate-200 mb-2">
+                                            <input
+                                                type="checkbox"
+                                                checked={departments.length > 0 && newModuleForm.department_ids.length === departments.length}
+                                                onChange={(e) => {
+                                                    const isChecked = e.target.checked;
+                                                    setNewModuleForm(prev => ({
+                                                        ...prev,
+                                                        department_ids: isChecked 
+                                                            ? departments.map(d => d.id) 
+                                                            : [] 
+                                                    }))
+                                                }}
+                                                className="w-4 h-4 text-blue-600 rounded cursor-pointer"
+                                            />
+                                            <span className="text-sm text-slate-800 font-extrabold">Select All</span>
+                                        </label>
+
+                                        {departments.map(d => (
+                                            <label key={d.id} className="flex items-center gap-3 cursor-pointer p-1 hover:bg-slate-100 rounded-lg transition">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={newModuleForm.department_ids.includes(d.id)}
+                                                    onChange={(e) => {
+                                                        const checked = e.target.checked;
+                                                        setNewModuleForm(prev => ({
+                                                            ...prev,
+                                                            department_ids: checked
+                                                                ? [...prev.department_ids, d.id]
+                                                                : prev.department_ids.filter(id => id !== d.id)
+                                                        }))
+                                                    }}
+                                                    className="w-4 h-4 text-blue-600 rounded cursor-pointer"
+                                                />
+                                                <span className="text-sm text-slate-700 font-medium">{d.name}</span>
+                                            </label>
+                                        ))}
+                                    </div>
+                                    <p className="text-xs text-slate-500 font-medium mt-1">Checking all (or none) makes this company-wide.</p>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-bold text-slate-600 mb-1">Description (Optional)</label>
                                 <textarea value={newModuleForm.description} onChange={e => setNewModuleForm({ ...newModuleForm, description: e.target.value })} className="w-full px-3 py-2 border rounded-xl outline-none focus:border-blue-500 resize-none"></textarea>
                             </div>
+
                             <div className="pt-4 flex justify-end gap-3">
                                 <button type="button" onClick={() => setShowModuleModal(false)} className="px-4 py-2 text-slate-600 font-bold hover:bg-slate-100 rounded-xl">Cancel</button>
-                                <button type="submit" disabled={isCreatingModule} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl disabled:opacity-60">{isCreatingModule ? "Creating..." : "Create Module"}</button>
+                                <button type="submit" disabled={isCreatingModule || newModuleForm.role_ids.length === 0} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl disabled:opacity-60">{isCreatingModule ? "Creating..." : "Create Module"}</button>
                             </div>
                         </form>
                     </div>
                 </div>
             )}
 
-            {/* 2. Edit Content Modal */}
+            {/* NEW: 2. Edit Module Modal */}
+            {showEditModuleModal && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+                    <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setShowEditModuleModal(false)} />
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-md relative z-[61] p-6 flex flex-col text-left">
+                        <div className="flex justify-between items-center mb-6">
+                            <h3 className="text-xl font-bold text-slate-800 text-left">Edit Module</h3>
+                            <button onClick={() => setShowEditModuleModal(false)} className="text-slate-400 hover:text-slate-800"><X className="w-5 h-5" /></button>
+                        </div>
+                        
+                        <form onSubmit={handleEditModuleSubmit} className="space-y-4 text-left">
+                            <div>
+                                <label className="block text-sm font-bold text-slate-600 mb-1">Module Title</label>
+                                <input type="text" required value={editModuleForm.title} onChange={e => setEditModuleForm({ ...editModuleForm, title: e.target.value })} className="w-full px-3 py-2 border rounded-xl outline-none focus:border-blue-500" />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-bold text-slate-600 mb-1">Module Type</label>
+                                <select value={editModuleForm.module_type} onChange={e => setEditModuleForm({ ...editModuleForm, module_type: e.target.value })} className="w-full px-3 py-2 border rounded-xl bg-white outline-none focus:border-blue-500">
+                                    <option value="Department Training">Department Training</option>
+                                    <option value="Client Training">Client Training</option>
+                                    <option value="On-Boarding">On-Boarding</option>
+                                </select>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                {/* Role Multi-select */}
+                                <div>
+                                    <label className="block text-sm font-bold text-slate-600 mb-2">Assign to Roles *</label>
+                                    <div className="space-y-2 max-h-48 overflow-y-auto border border-slate-200 rounded-xl p-3 bg-slate-50">
+                                        {roles.map(r => (
+                                            <label key={r.id} className="flex items-center gap-3 cursor-pointer p-1 hover:bg-slate-100 rounded-lg transition">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={editModuleForm.role_ids.includes(r.id)}
+                                                    onChange={(e) => {
+                                                        const checked = e.target.checked;
+                                                        setEditModuleForm(prev => ({
+                                                            ...prev,
+                                                            role_ids: checked
+                                                                ? [...prev.role_ids, r.id]
+                                                                : prev.role_ids.filter(id => id !== r.id)
+                                                        }))
+                                                    }}
+                                                    className="w-4 h-4 text-blue-600 rounded cursor-pointer"
+                                                />
+                                                <span className="text-sm text-slate-700 font-medium">{r.name}</span>
+                                            </label>
+                                        ))}
+                                    </div>
+                                    {editModuleForm.role_ids.length === 0 && <p className="text-xs text-red-500 font-bold mt-1">Select at least one role.</p>}
+                                </div>
+
+                                {/* Department Multi-select */}
+                                <div>
+                                    <label className="block text-sm font-bold text-slate-600 mb-2">Assign to Departments</label>
+                                    <div className="space-y-2 max-h-48 overflow-y-auto border border-slate-200 rounded-xl p-3 bg-slate-50">
+                                        <label className="flex items-center gap-3 cursor-pointer p-1 hover:bg-slate-200 bg-slate-100 rounded-lg transition border border-slate-200 mb-2">
+                                            <input
+                                                type="checkbox"
+                                                checked={departments.length > 0 && editModuleForm.department_ids.length === departments.length}
+                                                onChange={(e) => {
+                                                    const isChecked = e.target.checked;
+                                                    setEditModuleForm(prev => ({
+                                                        ...prev,
+                                                        department_ids: isChecked 
+                                                            ? departments.map(d => d.id) 
+                                                            : [] 
+                                                    }))
+                                                }}
+                                                className="w-4 h-4 text-blue-600 rounded cursor-pointer"
+                                            />
+                                            <span className="text-sm text-slate-800 font-extrabold">Select All</span>
+                                        </label>
+
+                                        {departments.map(d => (
+                                            <label key={d.id} className="flex items-center gap-3 cursor-pointer p-1 hover:bg-slate-100 rounded-lg transition">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={editModuleForm.department_ids.includes(d.id)}
+                                                    onChange={(e) => {
+                                                        const checked = e.target.checked;
+                                                        setEditModuleForm(prev => ({
+                                                            ...prev,
+                                                            department_ids: checked
+                                                                ? [...prev.department_ids, d.id]
+                                                                : prev.department_ids.filter(id => id !== d.id)
+                                                        }))
+                                                    }}
+                                                    className="w-4 h-4 text-blue-600 rounded cursor-pointer"
+                                                />
+                                                <span className="text-sm text-slate-700 font-medium">{d.name}</span>
+                                            </label>
+                                        ))}
+                                    </div>
+                                    <p className="text-xs text-slate-500 font-medium mt-1">Checking all (or none) makes this company-wide.</p>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-bold text-slate-600 mb-1">Description (Optional)</label>
+                                <textarea value={editModuleForm.description} onChange={e => setEditModuleForm({ ...editModuleForm, description: e.target.value })} className="w-full px-3 py-2 border rounded-xl outline-none focus:border-blue-500 resize-none"></textarea>
+                            </div>
+
+                            <div className="pt-4 flex justify-end gap-3">
+                                <button type="submit" disabled={isEditingModule || editModuleForm.role_ids.length === 0} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition disabled:opacity-60 flex items-center gap-2">
+                                    {isEditingModule && <Loader2 className="w-4 h-4 animate-spin" />} Save Changes
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* 3. Edit Content Modal */}
             {showEditContentModal && (
                 <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
                     <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setShowEditContentModal(false)} />
@@ -428,7 +657,6 @@ export default function AdminModulesTab() {
                                     <option value="VIDEO">Video (YouTube)</option>
                                     <option value="DOCUMENT">Document (PDF/Word)</option>
                                 </select>
-                                <p className="text-xs text-slate-400 mt-1">Content type cannot be changed.</p>
                             </div>
 
                             {editContentForm.content_type === 'VIDEO' ? (
@@ -458,7 +686,6 @@ export default function AdminModulesTab() {
                     </div>
                 </div>
             )}
-
         </div>
     );
 }

@@ -72,7 +72,7 @@ def get_current_user(
 
 def require_admin(current_user: models.User = Depends(get_current_user)) -> models.User:
     """Dependency that ensures the current user has ADMIN role."""
-    if current_user.role != models.RoleEnum.ADMIN:
+    if current_user.role.name.upper() != "ADMIN":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin privileges required"

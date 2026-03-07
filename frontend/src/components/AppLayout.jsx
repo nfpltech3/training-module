@@ -85,8 +85,9 @@ export default function AppLayout() {
                                     <p className="text-sm font-semibold text-slate-800 leading-tight">
                                         {user?.full_name}
                                     </p>
-                                    <p className="text-xs text-slate-500">
-                                        {user?.department?.name || 'N/A'}
+                                    {/* UPDATED: Show Role if Department is missing */}
+                                    <p className="text-xs font-bold text-slate-500 uppercase">
+                                        {user?.department?.name || user?.role?.name}
                                     </p>
                                 </div>
                                 <div className="w-9 h-9 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-sm border-2 border-blue-200">
@@ -127,7 +128,8 @@ export default function AppLayout() {
                         <div className="flex items-center justify-between p-4 border-b border-slate-200">
                             <div>
                                 <p className="font-bold text-slate-800">{user?.full_name}</p>
-                                <p className="text-xs text-slate-500">{user?.department?.name}</p>
+                                {/* UPDATED: Show Role if Department is missing */}
+                                <p className="text-xs font-bold text-slate-500 uppercase">{user?.department?.name || user?.role?.name}</p>
                             </div>
                             <button
                                 onClick={() => setMobileMenuOpen(false)}
