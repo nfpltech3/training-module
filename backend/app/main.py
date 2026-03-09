@@ -4,11 +4,12 @@ import httpx
 from datetime import datetime
 from typing import List, Optional
 
-from fastapi import FastAPI, Depends, HTTPException, UploadFile, File
+from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Header, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
+from pydantic import BaseModel
 
 from . import models, schemas
 from .database import engine, get_db, SessionLocal
@@ -101,6 +102,45 @@ def read_root():
     return {"status": "ok", "message": "Nagarkot Knowledge Platform API v2 is running"}
 
 
+# ── OS webhook — user lifecycle events ───────────────────────────────
+class OsWebhookPayload(BaseModel):
+    event: str           # 'user.deleted' | 'user.deactivated' | 'user.reactivated'
+    os_user_id: str
+    email: str
+    timestamp: str
+
+@app.post("/webhooks/os", status_code=200)
+def os_webhook(
+    payload: OsWebhookPayload,
+    x_internal_key: str = Header(default=""),
+    db: Session = Depends(get_db),
+):
+    if not INTERNAL_API_KEY or x_internal_key != INTERNAL_API_KEY:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    user = db.query(models.User).filter(
+        models.User.os_user_id == payload.os_user_id
+    ).first()
+
+    if not user:
+        # User may not have ever logged in to Trainings — nothing to do
+        return {"status": "ignored", "reason": "user_not_found"}
+
+    if payload.event in ("user.deleted", "user.deactivated"):
+        user.is_active = False
+        db.commit()
+        print(f"[OS webhook] {payload.event}: deactivated user {payload.os_user_id} ({payload.email})")
+        return {"status": "ok", "action": "deactivated"}
+
+    if payload.event == "user.reactivated":
+        user.is_active = True
+        db.commit()
+        print(f"[OS webhook] {payload.event}: reactivated user {payload.os_user_id} ({payload.email})")
+        return {"status": "ok", "action": "reactivated"}
+
+    return {"status": "ignored", "reason": "unknown_event"}
+
+
 # ── SSO router ────────────────────────────────────────────────────
 app.include_router(sso_router, prefix="/auth", tags=["SSO"])
 
@@ -139,6 +179,11 @@ def login(payload: schemas.LoginRequest, db: Session = Depends(get_db)):
                     raise HTTPException(
                         status_code=403,
                         detail="You do not have access to Trainings. Contact your administrator.",
+                    )
+                if reason == "deactivated":
+                    raise HTTPException(
+                        status_code=403,
+                        detail="Your account has been deactivated. Contact your administrator.",
                     )
                 raise HTTPException(status_code=401, detail="Invalid email or password")
 
@@ -376,6 +421,84 @@ def admin_update_user(user_id: str, payload: schemas.AdminUserUpdate, db: Sessio
                 print(f"WARNING: Could not deactivate user {db_user.os_user_id} in OS")
 
     return db_user
+
+
+# =====================================================================
+#  OS INBOUND WEBHOOK
+# =====================================================================
+@app.post("/webhooks/os")
+def os_webhook(
+    payload: dict,
+    x_internal_key: str = Header(None, alias="x-internal-key"),
+    db: Session = Depends(get_db),
+):
+    """
+    Receives user lifecycle events from OS.
+    Events: user.deactivated, user.deleted, user.reactivated
+    """
+    # ── 1. Verify internal key ────────────────────────────────
+    if not x_internal_key or x_internal_key != INTERNAL_API_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid internal API key",
+        )
+
+    event = payload.get("event")
+    os_user_id = payload.get("os_user_id")
+    email = payload.get("email")
+
+    if not event or not os_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing required fields: event, os_user_id",
+        )
+
+    print(f"[Webhook] Received event '{event}' for os_user_id={os_user_id}")
+
+    # ── 2. Find user in Trainings DB ─────────────────────────
+    user = (
+        db.query(models.User)
+        .filter(models.User.os_user_id == os_user_id)
+        .first()
+    )
+
+    if not user and email:
+        # Fallback: match by email for users linked before os_user_id was tracked
+        user = (
+            db.query(models.User)
+            .filter(models.User.email == email)
+            .first()
+        )
+
+    if not user:
+        # User doesn't exist in Trainings — nothing to do
+        print(f"[Webhook] User {os_user_id} not found in Trainings DB — skipping")
+        return {"status": "ok", "message": "User not found locally — no action taken"}
+
+    # ── 3. Handle each event ─────────────────────────────────
+    if event == "user.deactivated":
+        user.is_active = False
+        db.commit()
+        print(f"[Webhook] User {user.email} deactivated in Trainings")
+        return {"status": "ok", "message": f"User {user.email} deactivated"}
+
+    elif event == "user.deleted":
+        email_log = user.email
+        db.delete(user)
+        db.commit()
+        print(f"[Webhook] User {email_log} hard-deleted from Trainings")
+        return {"status": "ok", "message": f"User {email_log} deleted"}
+
+    elif event == "user.reactivated":
+        user.is_active = True
+        db.commit()
+        print(f"[Webhook] User {user.email} reactivated in Trainings")
+        return {"status": "ok", "message": f"User {user.email} reactivated"}
+
+    else:
+        # Unknown event — log and acknowledge (don't error, OS may add new events later)
+        print(f"[Webhook] Unknown event '{event}' — ignored")
+        return {"status": "ok", "message": f"Event '{event}' not handled"}
 
 
 # =====================================================================

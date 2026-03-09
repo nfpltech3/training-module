@@ -99,8 +99,8 @@ class Content(Base):
 class UserProgress(Base):
     __tablename__ = "user_progress"
     id = Column(String, primary_key=True, default=generate_uuid)
-    user_id = Column(String, ForeignKey("users.id"), nullable=False)
-    content_id = Column(String, ForeignKey("content.id"), nullable=False)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    content_id = Column(String, ForeignKey("content.id", ondelete="CASCADE"), nullable=False)
     furthest_second_watched = Column(Integer, default=0) 
     is_completed = Column(Boolean, default=False)
     completed_at = Column(DateTime, nullable=True)

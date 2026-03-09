@@ -124,14 +124,25 @@ def sso_login(body: SsoRequest, db: Session = Depends(get_db)):
             headers={"x-internal-key": INTERNAL_API_KEY},
             timeout=5.0,
         )
-        if check.status_code == 200 and not check.json().get("is_active", True):
+        if check.status_code == 200:
+            session_data = check.json()
+            if not session_data.get("is_active", True):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Your account has been deactivated. Contact your administrator.",
+                )
+        elif check.status_code == 404:
+            # User not found in OS — treat as deactivated
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Your account has been deactivated. Contact your administrator.",
+                detail="Your account was not found in OS. Contact your administrator.",
             )
+        else:
+            # Other non-200 responses (500, etc.) — fail open with warning
+            print(f"WARNING: OS verify-session returned {check.status_code} for {os_user_id} — proceeding")
     except httpx.RequestError:
-        # OS unreachable — fail open, log warning
-        print(f"WARNING: Could not reach OS to verify user {os_user_id} — proceeding")
+        # Network error — fail open, log warning
+        print(f"WARNING: Could not reach OS to verify {os_user_id} — proceeding (fail open)")
 
     # ── 4. Find or create local Trainings user ────────────────────
     user = (
