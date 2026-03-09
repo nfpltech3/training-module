@@ -54,6 +54,13 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+    # ── SSO: links this user to their OS identity ──────────────────
+    os_user_id = Column(String, nullable=True, unique=True, index=True)
+
+    # Synced from OS on every SSO login — do not edit manually
+    department_slug = Column(String, nullable=True)   # e.g. 'operations', null for clients
+    is_app_admin = Column(Boolean, default=False)      # set by OS super admin
+
 class Module(Base):
     __tablename__ = "modules"
     id = Column(String, primary_key=True, default=generate_uuid)
@@ -98,3 +105,15 @@ class UserProgress(Base):
     is_completed = Column(Boolean, default=False)
     completed_at = Column(DateTime, nullable=True)
     last_accessed_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class SsoTokenLog(Base):
+    """
+    Tracks consumed SSO tokens to prevent replay attacks.
+    Each token_id can only be used once.
+    """
+    __tablename__ = "sso_token_log"
+    token_id = Column(String, primary_key=True)   # UUID from OS JWT payload
+    used = Column(Boolean, default=True)
+    consumed_at = Column(DateTime, default=datetime.utcnow)
+    app_slug = Column(String, nullable=True)       # 'trainings'

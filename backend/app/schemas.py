@@ -72,12 +72,20 @@ class AdminUserUpdate(BaseModel):
     is_active: Optional[bool] = None
 
 
-class UserResponse(UserBase):
+class UserResponse(BaseModel):
     id: str
-    role: RoleResponse
+    email: str
+    username: str
+    full_name: str
+    role_id: str
+    role: Optional[RoleResponse] = None
+    department_id: Optional[str] = None
     department: Optional[DepartmentResponse] = None
     is_active: bool
     created_at: datetime
+    os_user_id: Optional[str] = None
+    department_slug: Optional[str] = None
+    is_app_admin: bool = False
 
     class Config:
         from_attributes = True

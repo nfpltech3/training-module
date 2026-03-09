@@ -14,14 +14,16 @@ import LearnerDashboard from './pages/LearnerDashboard';
 import ModuleViewer from './pages/ModuleViewer';
 import AdminDashboard from './pages/AdminDashboard';
 import AdminReports from './pages/AdminReports';
+import SsoPage from './pages/SsoPage';
 
 export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
         <Routes>
-          {/* Public route */}
+          {/* Public routes */}
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/sso" element={<SsoPage />} />
 
           {/* Authenticated routes — wrapped in AppLayout shell */}
           <Route

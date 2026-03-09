@@ -32,8 +32,8 @@ export default function LoginPage() {
             // Store in AuthContext + localStorage
             login(access_token, user);
 
-            // Redirect based on role
-            if (user.role === 'ADMIN') {
+            // Redirect based on role (role is an object { name: 'ADMIN' })
+            if (user.role?.name === 'ADMIN') {
                 navigate('/admin', { replace: true });
             } else {
                 navigate('/', { replace: true });
@@ -68,7 +68,15 @@ export default function LoginPage() {
                     <div className="p-8">
                         {error && (
                             <div className="bg-red-50 text-red-700 text-sm font-medium p-4 rounded-xl border border-red-100 mb-6 text-center">
-                                {error}
+                                <p>{error}</p>
+                                {error.includes('portal') && (
+                                    <a
+                                        href="http://localhost:3000"
+                                        style={{ color: '#2563eb', fontSize: 13, display: 'block', marginTop: 6 }}
+                                    >
+                                        → Go to Nagarkot OS Portal
+                                    </a>
+                                )}
                             </div>
                         )}
 

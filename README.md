@@ -59,3 +59,124 @@ When the database runs for the first time, it automatically creates a root admin
 
 - **Username / Email:** `admin@nagarkot.com` / `admin`
 - **Password:** `admin123`
+
+---
+
+## 🔗 Linking Trainings with the OS Portal
+
+Trainings authenticates users via the Nagarkot OS (the central identity portal). The two systems communicate through:
+- **SSO tokens** — RS256 JWTs issued by OS and verified by Trainings
+- **Internal API calls** — Trainings calls OS to create users, verify passwords, and deactivate accounts; secured by a shared `INTERNAL_API_KEY`
+
+All OS connection settings live in `backend/.env`.
+
+---
+
+### Step 1 — Get the values from OS
+
+You need three things from whoever runs the OS backend:
+
+| What | Where to find it in OS |
+|------|------------------------|
+| **Public key** (`OS_JWT_PUBLIC_KEY`) | OS project → `OS/public.pem` (or the `JWT_PUBLIC_KEY` env var on the OS server) |
+| **OS backend URL** (`OS_BACKEND_URL`) | The base URL where the OS API is running |
+| **Internal API key** (`INTERNAL_API_KEY`) | Must match the `INTERNAL_API_KEY` set on the OS server exactly |
+
+---
+
+### Step 2 — Edit `backend/.env`
+
+```env
+# ── Trainings own secrets ──────────────────────────────────────────────
+SECRET_KEY=replace-with-a-long-random-string-for-jwt-signing
+DATABASE_URL=sqlite:///./nagarkot.db
+
+# ── OS public key (paste the full PEM block, keep the quotes) ──────────
+OS_JWT_PUBLIC_KEY="-----BEGIN PUBLIC KEY-----
+<paste the contents of OS/public.pem here>
+-----END PUBLIC KEY-----"
+
+# ── OS connection ──────────────────────────────────────────────────────
+OS_BACKEND_URL=http://localhost:3001       # local dev
+# OS_BACKEND_URL=https://os.nagarkot.com  # production
+
+INTERNAL_API_KEY=<exact same key as set in OS .env>
+
+# ── CORS — origins allowed to call this API ────────────────────────────
+ALLOWED_ORIGINS=http://localhost:5173,http://localhost:5174
+# production: ALLOWED_ORIGINS=https://trainings.nagarkot.com
+```
+
+---
+
+### Step 3 — Configure the frontend API URL (optional)
+
+By default the frontend calls `http://localhost:8000`. To point it at a different backend, create `frontend/.env`:
+
+```env
+# local dev (default — only needed if your backend runs on a different port)
+VITE_API_URL=http://localhost:8000
+
+# production
+# VITE_API_URL=https://trainings-api.nagarkot.com
+```
+
+---
+
+### Local Development Setup (both systems on the same machine)
+
+| Service | Default URL |
+|---------|-------------|
+| OS backend | `http://localhost:3001` |
+| Trainings backend | `http://localhost:8000` |
+| Trainings frontend | `http://localhost:5173` |
+
+1. Start the OS backend first (`npm run dev` or equivalent in the OS project).
+2. Copy `OS/public.pem` content into `backend/.env` as `OS_JWT_PUBLIC_KEY`.
+3. Copy the `INTERNAL_API_KEY` from the OS `.env` into `backend/.env`.
+4. Start the Trainings backend: `python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload`
+5. Start the Trainings frontend: `npm run dev -- --host`
+6. Log in via OS portal → SSO redirects to `http://localhost:5173/sso?token=...` → Trainings validates the token and issues its own JWT.
+
+---
+
+### Production Deployment
+
+1. Set real HTTPS URLs for both `OS_BACKEND_URL` and `ALLOWED_ORIGINS` in `backend/.env`.
+2. Set `VITE_API_URL` in `frontend/.env` to the production Trainings API URL before building:
+   ```bash
+   cd frontend
+   npm run build    # output goes to frontend/dist/
+   ```
+3. Generate a strong `SECRET_KEY` (minimum 32 random characters). Do not reuse the dev key.
+4. The `INTERNAL_API_KEY` must be the same value on both the OS server and the Trainings server. Rotate it the same way on both sides simultaneously.
+5. Make sure the OS server has `https://trainings.nagarkot.com` (or your domain) added to its allowed redirect/CORS origins for SSO tokens.
+
+---
+
+### How SSO Login Works (for reference)
+
+```
+User clicks "Login with OS"
+        │
+        ▼
+OS portal authenticates the user
+        │
+        ▼
+OS issues a short-lived RS256 token and redirects to:
+  https://trainings.nagarkot.com/sso?token=<RS256_token>
+        │
+        ▼
+Trainings frontend sends token to POST /auth/sso
+        │
+        ▼
+Trainings backend:
+  1. Verifies RS256 signature using OS_JWT_PUBLIC_KEY
+  2. Checks token has not been used before (replay protection)
+  3. Calls OS /auth/verify-session to confirm account is still active
+  4. Finds or creates local user, syncs role from is_app_admin / user_type
+  5. Issues a Trainings HS256 JWT → returned to frontend
+        │
+        ▼
+Frontend stores JWT in localStorage, user is logged in
+```

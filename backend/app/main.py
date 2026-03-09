@@ -1,5 +1,6 @@
 import os
 import shutil
+import httpx
 from datetime import datetime
 from typing import List, Optional
 
@@ -15,6 +16,11 @@ from .auth import (
     hash_password, verify_password,
     create_access_token, get_current_user, require_admin,
 )
+from .sso import router as sso_router
+
+# ── OS backend connection (for SSO user password delegation) ────────
+OS_BACKEND_URL = os.getenv("OS_BACKEND_URL", "http://localhost:3001")
+INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY", "")
 
 # --- Create Database tables ---
 models.Base.metadata.create_all(bind=engine)
@@ -76,9 +82,14 @@ def startup_event():
 
 
 # --- CORS ---
+ALLOWED_ORIGINS = os.getenv(
+    "ALLOWED_ORIGINS",
+    "http://localhost:5173,http://localhost:5174,http://localhost:3000"
+).split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -90,10 +101,14 @@ def read_root():
     return {"status": "ok", "message": "Nagarkot Knowledge Platform API v2 is running"}
 
 
+# ── SSO router ────────────────────────────────────────────────────
+app.include_router(sso_router, prefix="/auth", tags=["SSO"])
+
+
 # =====================================================================
 #  AUTH & DEPARTMENTS & USERS
 # =====================================================================
-@app.post("/auth/login", response_model=schemas.TokenResponse)
+@app.post("/auth/login")
 def login(payload: schemas.LoginRequest, db: Session = Depends(get_db)):
     identifier = payload.identifier.lower().strip()
     user = db.query(models.User).filter(
@@ -101,17 +116,80 @@ def login(payload: schemas.LoginRequest, db: Session = Depends(get_db)):
         (func.lower(models.User.username) == identifier)
     ).first()
 
-    if not user or not verify_password(payload.password, user.password_hash):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
 
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Account is deactivated")
 
+    if user.password_hash == "SSO_USER_NO_PASSWORD":
+        # ── SSO user: delegate password check to OS ──────────────────
+        try:
+            res = httpx.post(
+                f"{OS_BACKEND_URL}/auth/verify-password",
+                json={"email": user.email, "password": payload.password, "app_slug": "trainings"},
+                headers={"x-internal-key": INTERNAL_API_KEY},
+                timeout=10.0,
+            )
+            data = res.json()
+
+            if res.status_code != 200 or not data.get("valid"):
+                reason = data.get("reason", "")
+                if reason == "no_app_access":
+                    raise HTTPException(
+                        status_code=403,
+                        detail="You do not have access to Trainings. Contact your administrator.",
+                    )
+                raise HTTPException(status_code=401, detail="Invalid email or password")
+
+            # Sync identity fields from OS response
+            os_user = data["user"]
+            user.department_slug = os_user.get("department_slug")
+            user.is_app_admin = os_user.get("is_app_admin", False)
+            user.full_name = os_user.get("name", user.full_name)
+
+            # Sync role — is_app_admin is authoritative for ADMIN,
+            # user_type distinguishes EMPLOYEE vs CLIENT for everyone else
+            os_user_type = os_user.get("user_type", "employee")
+            if os_user.get("is_app_admin"):
+                target_role_name = "ADMIN"
+            elif os_user_type == "client":
+                target_role_name = "CLIENT"
+            else:
+                target_role_name = "EMPLOYEE"
+            target_role = db.query(models.Role).filter(
+                models.Role.name == target_role_name
+            ).first()
+            if target_role:
+                user.role_id = target_role.id
+
+            db.commit()
+            db.refresh(user)
+
+        except httpx.RequestError:
+            raise HTTPException(
+                status_code=503,
+                detail="Authentication service is unavailable. Please try again or use the OS portal.",
+            )
+    else:
+        # ── Local user: verify password normally ──────────────────────
+        if not verify_password(payload.password, user.password_hash):
+            raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    # Issue Trainings JWT — same for both paths
     token = create_access_token(data={"sub": user.id})
-    return schemas.TokenResponse(
-        access_token=token,
-        user=schemas.UserResponse.model_validate(user),
-    )
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "user": {
+            "id": user.id,
+            "email": user.email,
+            "full_name": user.full_name,
+            "role": {"name": user.role.name} if user.role else None,
+            "is_app_admin": user.is_app_admin,
+            "department_slug": user.department_slug,
+        },
+    }
 
 
 @app.get("/departments/", response_model=List[schemas.DepartmentResponse])
@@ -144,14 +222,68 @@ def update_department(dept_id: str, payload: schemas.DepartmentUpdate, db: Sessi
 
 
 @app.post("/users/", response_model=schemas.UserResponse)
-def create_user(user: schemas.UserCreate, db: Session = Depends(get_db), admin: models.User = Depends(require_admin)):
+def create_user(
+    user: schemas.UserCreate,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(require_admin)
+):
+    # ── 1. Call OS to create/register user ──────────────────────
+    # OS is the user master — every user must exist there first
+    try:
+        os_res = httpx.post(
+            f"{OS_BACKEND_URL}/users/from-app",
+            json={
+                "email": user.email,
+                "name": user.full_name,
+                "password": user.password,
+                "app_slug": "trainings",
+                "requested_by_os_user_id": admin.os_user_id or "local-admin",
+            },
+            headers={"x-internal-key": INTERNAL_API_KEY},
+            timeout=10.0,
+        )
+        if os_res.status_code not in (200, 201):
+            raise HTTPException(
+                status_code=502,
+                detail=f"Failed to register user in OS: {os_res.text}",
+            )
+        os_data = os_res.json()
+        os_user_id = os_data.get("os_user_id")
+    except httpx.RequestError:
+        raise HTTPException(
+            status_code=503,
+            detail="OS is unreachable. Cannot create user right now. Try again shortly.",
+        )
+
+    # ── 2. Check if user already exists locally (by email or os_user_id) ──
+    existing = (
+        db.query(models.User)
+        .filter(
+            (models.User.email == user.email) |
+            (models.User.os_user_id == os_user_id)
+        )
+        .first()
+    )
+    if existing:
+        # Link os_user_id if not already linked
+        if not existing.os_user_id and os_user_id:
+            existing.os_user_id = os_user_id
+            db.commit()
+        raise HTTPException(
+            status_code=409,
+            detail="A user with this email already exists in Trainings.",
+        )
+
+    # ── 3. Create local Trainings user ───────────────────────────
     db_user = models.User(
         email=user.email,
         username=user.username or user.email,
         password_hash=hash_password(user.password),
         full_name=user.full_name,
-        department_id=user.department_id,
+        department_id=user.department_id if user.department_id else None,
         role_id=user.role_id,
+        os_user_id=os_user_id,
+        is_app_admin=False,
     )
     db.add(db_user)
     db.commit()
@@ -199,11 +331,50 @@ def admin_update_user(user_id: str, payload: schemas.AdminUserUpdate, db: Sessio
         db_user.email = update_data["email"]
     update_data.pop("email", None)
 
+    # Prevent direct ADMIN role assignment — role is synced from OS is_app_admin
+    if "role_id" in update_data and update_data["role_id"] is not None:
+        admin_role = db.query(models.Role).filter(models.Role.name == "ADMIN").first()
+        if admin_role and update_data["role_id"] == admin_role.id:
+            # Only allow if the user already has is_app_admin=True
+            if not db_user.is_app_admin:
+                raise HTTPException(
+                    status_code=403,
+                    detail="ADMIN role can only be granted via OS portal (is_app_admin flag). "
+                           "Enable App Admin for this user in the OS admin panel first.",
+                )
+
     for key, value in update_data.items():
         if value is not None:
             setattr(db_user, key, value)
+
+    # Keep department_slug in sync when department_id is explicitly changed
+    if "department_id" in update_data:
+        if update_data["department_id"]:
+            dept = db.query(models.Department).filter(
+                models.Department.id == update_data["department_id"]
+            ).first()
+            if dept:
+                db_user.department_slug = dept.name.lower().replace(" ", "_")
+        else:
+            db_user.department_slug = None
+
     db.commit()
     db.refresh(db_user)
+
+    # If user was deactivated, notify OS
+    if 'is_active' in update_data and not update_data['is_active']:
+        if db_user.os_user_id:
+            try:
+                httpx.patch(
+                    f"{OS_BACKEND_URL}/users/{db_user.os_user_id}",
+                    json={"is_active": False},
+                    headers={"x-internal-key": INTERNAL_API_KEY},
+                    timeout=5.0,
+                )
+            except httpx.RequestError:
+                # Log but don't block — local deactivation still happened
+                print(f"WARNING: Could not deactivate user {db_user.os_user_id} in OS")
+
     return db_user
 
 

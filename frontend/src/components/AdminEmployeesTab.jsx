@@ -26,6 +26,13 @@ export default function AdminEmployeesTab() {
     const [editForm, setEditForm] = useState(null);
     const [isSaving, setIsSaving] = useState(false);
 
+    function willRoleBeSynced(user) {
+        if (!user.os_user_id) return false;
+        if (user.is_app_admin && user.role?.name !== 'ADMIN') return true;
+        if (!user.is_app_admin && user.role?.name === 'ADMIN') return true;
+        return false;
+    }
+
     useEffect(() => {
         fetchData();
     }, []);
@@ -135,6 +142,7 @@ export default function AdminEmployeesTab() {
                             <th className="p-4">Department</th>
                             <th className="p-4">Role</th>
                             <th className="p-4 text-center">Status</th>
+                            <th className="p-4 text-center">OS Linked</th>
                             <th className="p-4 text-right pr-6">Actions</th>
                         </tr>
                     </thead>
@@ -176,8 +184,11 @@ export default function AdminEmployeesTab() {
                                                 onChange={e => setEditForm({ ...editForm, role_id: e.target.value })}
                                                 className="w-full px-3 py-1.5 border border-slate-300 rounded-lg outline-none focus:border-blue-500 bg-white"
                                             >
-                                                {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                                                {roles
+                                                    .filter(r => r.name !== 'ADMIN')
+                                                    .map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
                                             </select>
+                                            <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>Admin access is granted via the OS portal.</p>
                                         </td>
                                         <td className="p-3 flex items-center gap-2 justify-center">
                                             <input
@@ -191,6 +202,13 @@ export default function AdminEmployeesTab() {
                                                 <input type="checkbox" checked={editForm.is_active} onChange={e => setEditForm({ ...editForm, is_active: e.target.checked })} />
                                                 <span className="text-xs">Active</span>
                                             </label>
+                                        </td>
+                                        <td className="p-3 text-center">
+                                            {user.os_user_id ? (
+                                                <span style={{ color: '#4ade80', fontSize: 12 }}>✓ Synced</span>
+                                            ) : (
+                                                <span style={{ color: '#f87171', fontSize: 12 }}>✗ Local only</span>
+                                            )}
                                         </td>
                                         <td className="p-3 pr-6 text-right whitespace-nowrap">
                                             <button onClick={() => setEditingId(null)} className="text-xs text-slate-500 mr-3">Cancel</button>
@@ -208,15 +226,27 @@ export default function AdminEmployeesTab() {
                                     <td className="p-4 text-slate-500">{user.email}</td>
                                     <td className="p-4 text-slate-600">{user.department?.name || '—'}</td>
                                     <td className="p-4">
-                                        <span className={`px-2 py-1 rounded-md text-xs font-bold ${user.role?.name === 'ADMIN' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600'}`}>
-                                            {user.role?.name}
-                                        </span>
+                                        <div className="flex items-center gap-1">
+                                            <span className={`px-2 py-1 rounded-md text-xs font-bold ${user.role?.name === 'ADMIN' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600'}`}>
+                                                {user.role?.name}
+                                            </span>
+                                            {willRoleBeSynced(user) && (
+                                                <span title="Role will sync from OS on next login" style={{ fontSize: 10, color: '#f59e0b' }}>⚠</span>
+                                            )}
+                                        </div>
                                     </td>
                                     <td className="p-4 text-center">
                                         {user.is_active ?
                                             <span className="w-2.5 h-2.5 rounded-full bg-green-500 inline-block"></span> :
                                             <span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block"></span>
                                         }
+                                    </td>
+                                    <td className="p-4 text-center">
+                                        {user.os_user_id ? (
+                                            <span style={{ color: '#4ade80', fontSize: 12 }}>✓ Synced</span>
+                                        ) : (
+                                            <span style={{ color: '#f87171', fontSize: 12 }}>✗ Local only</span>
+                                        )}
                                     </td>
                                     <td className="p-4 pr-6 text-right">
                                         <button onClick={() => startEdit(user)} className="text-sm font-semibold text-blue-600 hover:text-blue-800">Edit</button>
@@ -255,9 +285,12 @@ export default function AdminEmployeesTab() {
                             </div>
                             <div>
                                 <label className="block text-sm font-bold text-slate-600 mb-1">Role</label>
-                                <select value={createForm.role_id} onChange={e => setCreateForm({ ...createForm, role_id: e.target.value })} className="w-full px-3 py-2 border rounded-xl bg-white mb-4">
-                                    {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                                <select value={createForm.role_id} onChange={e => setCreateForm({ ...createForm, role_id: e.target.value })} className="w-full px-3 py-2 border rounded-xl bg-white mb-1">
+                                    {roles
+                                        .filter(r => r.name !== 'ADMIN')
+                                        .map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
                                 </select>
+                                <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 4, marginBottom: 12 }}>Admin access is granted via the OS portal.</p>
                                 <label className="block text-sm font-bold text-slate-600 mb-1">Department</label>
                                 <select value={createForm.department_id} onChange={e => setCreateForm({ ...createForm, department_id: e.target.value })} className="w-full px-3 py-2 border rounded-xl bg-white">
                                     <option value="">-- No Department (Client) --</option>
