@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 
 export default function AppLayout() {
-    const { user, isAdmin, logout } = useAuth();
+    const { user, isManager, logout } = useAuth();
     const location = useLocation();
     const navigate = useNavigate();
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -27,8 +27,8 @@ export default function AppLayout() {
     // Navigation items — filtered by role
     const navItems = [
         { to: '/', label: 'Dashboard', icon: Home, show: true },
-        { to: '/admin', label: 'Admin Portal', icon: Shield, show: isAdmin },
-        { to: '/admin/reports', label: 'Reports', icon: BarChart3, show: isAdmin },
+        { to: '/admin', label: 'Admin Portal', icon: Shield, show: isManager },
+        { to: '/admin/reports', label: 'Reports', icon: BarChart3, show: isManager },
     ];
 
     const visibleNavItems = navItems.filter((n) => n.show);

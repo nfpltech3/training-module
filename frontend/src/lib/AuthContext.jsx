@@ -47,8 +47,8 @@ export function AuthProvider({ children }) {
         token: auth.token,
         user: auth.user,
         isAuthenticated: !!auth.token,
-        // UPDATED: Now correctly checks the name property of the role object
         isAdmin: auth.user?.role?.name === 'ADMIN',
+        isManager: auth.user?.role?.name === 'ADMIN' || auth.user?.role?.name === 'TEAM LEAD',
         isAppAdmin: !!auth.user?.is_app_admin,
         login,
         logout,

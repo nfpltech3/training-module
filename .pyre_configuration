@@ -1,0 +1,10 @@
+{
+  "site_package_search_strategy": "pep561",
+  "source_directories": [
+    "backend",
+    "backend/app"
+  ],
+  "search_path": [
+    "backend/venv/Lib/site-packages"
+  ]
+}

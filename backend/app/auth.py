@@ -1,8 +1,8 @@
 """
-JWT Authentication & Password Hashing utilities.
+JWT Authentication utilities for the Training App (Spoke).
 
-Uses python-jose for JWT and passlib[bcrypt] for password hashing.
-Both are already in requirements.txt.
+Password verification is delegated entirely to the Nagarkot OS (Hub).
+This module only handles local HS256 session tokens.
 """
 
 import os
@@ -12,7 +12,6 @@ from typing import Optional
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 
 from .database import get_db
@@ -22,15 +21,6 @@ from . import models
 SECRET_KEY = os.getenv("SECRET_KEY", "nagarkot-dev-secret-change-in-production")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_HOURS = 24
-
-# --- Password Hashing ---
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-def hash_password(plain_password: str) -> str:
-    return pwd_context.hash(plain_password)
-
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
 
 # --- JWT Token ---
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=False)
@@ -71,10 +61,20 @@ def get_current_user(
 
 
 def require_admin(current_user: models.User = Depends(get_current_user)) -> models.User:
-    """Dependency that ensures the current user has ADMIN role."""
+    """Strict admin only — Super Admin and App Admin. NOT Team Lead."""
     if current_user.role.name.upper() != "ADMIN":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin privileges required"
+        )
+    return current_user
+
+
+def require_manager(current_user: models.User = Depends(get_current_user)) -> models.User:
+    """Admin OR Team Lead — for reports and module creation."""
+    if current_user.role.name.upper() not in ["ADMIN", "TEAM LEAD"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin or Team Lead privileges required"
         )
     return current_user

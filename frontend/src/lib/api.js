@@ -46,34 +46,34 @@ export const authLogin = (identifier, password) =>
     api.post('/auth/login', { identifier, password });
 
 // =====================================================================
-//  DEPARTMENTS & ROLES
+//  DEPARTMENTS & ROLES (Departments are proxied from OS)
 // =====================================================================
 export const getDepartments = () => api.get('/departments/');
-export const createDepartment = (data) => api.post('/departments/', data);
-export const updateDepartment = (id, data) => api.put(`/departments/${id}`, data);
+export const getAssignableDepartments = () => api.get('/departments/assignable');
+export const getClientOrganizations = () => api.get('/client-organizations/');
 export const getRoles = () => api.get('/roles/');
 
 // =====================================================================
-//  USERS
+//  USERS (Training App only reads and updates local role/status)
 // =====================================================================
 export const getMe = () => api.get('/users/me');
-export const updateMe = (data) => api.put('/users/me', data);
 export const getUsers = () => api.get('/users/');
-export const createUser = (data) => api.post('/users/', data);
 export const adminUpdateUser = (userId, data) =>
     api.put(`/admin/users/${userId}`, data);
 
 // =====================================================================
 //  MODULES
 // =====================================================================
-export const getModules = (departmentId) => {
-    const params = departmentId ? { department_id: departmentId } : {};
+export const getModules = (departmentSlug) => {
+    const params = departmentSlug ? { department_slug: departmentSlug } : {};
     return api.get('/modules/', { params });
 };
 export const createModule = (data) => api.post('/modules/', data);
 export const updateModule = (id, data) => api.put(`/modules/${id}`, data);
 export const reorderModule = (id, direction) =>
     api.put(`/modules/${id}/reorder`, { direction });
+export const moveModule = (id, newIndex) =>
+    api.put(`/modules/${id}/move`, { new_index: newIndex });
 
 // =====================================================================
 //  CONTENT
@@ -82,6 +82,8 @@ export const createContent = (data) => api.post('/content/', data);
 export const updateContent = (id, data) => api.put(`/content/${id}`, data);
 export const reorderContent = (id, direction) =>
     api.put(`/content/${id}/reorder`, { direction });
+export const moveContent = (id, newIndex) =>
+    api.put(`/content/${id}/move`, { new_index: newIndex });
 export const uploadDocument = (file) => {
     const formData = new FormData();
     formData.append('file', file);
@@ -99,8 +101,8 @@ export const getMyProgress = () => api.get('/progress/');
 // =====================================================================
 //  ADMIN REPORTS
 // =====================================================================
-export const getReportSummary = (departmentId) => {
-    const params = departmentId ? { department_id: departmentId } : {};
+export const getReportSummary = (departmentSlug) => {
+    const params = departmentSlug ? { department_slug: departmentSlug } : {};
     return api.get('/admin/reports/summary', { params });
 };
 export const getReportUserDetail = (userId) =>

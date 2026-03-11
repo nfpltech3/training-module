@@ -57,33 +57,28 @@ def sso_login(body: SsoRequest, db: Session = Depends(get_db)):
         )
 
     # ── 1. Verify RS256 signature and expiry ──────────────────────
+    # Inside sso.py -> sso_login()
+
     try:
-        payload = jwt.decode(
-            body.token,
-            OS_JWT_PUBLIC_KEY,
-            algorithms=["RS256"],
-        )
+        payload = jwt.decode(body.token, OS_JWT_PUBLIC_KEY, algorithms=["RS256"])
+        print(f"[DEBUG] SSO payload: {payload}")
     except JWTError as e:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Invalid or expired SSO token: {str(e)}",
-        )
+        raise HTTPException(status_code=401, detail=f"Invalid or expired SSO token: {str(e)}")
 
-    token_id: Optional[str] = payload.get("token_id")
-    os_user_id: Optional[str] = payload.get("user_id")
-    email: Optional[str] = payload.get("email")
-    name: Optional[str] = payload.get("name")
-    user_type: Optional[str] = payload.get("user_type")  # 'employee' or 'client'
-
-    # New fields from updated OS SSO payload
-    department_slug: Optional[str] = payload.get("department_slug")
-    is_app_admin: bool = payload.get("is_app_admin", False)
+    # Map directly to OS sso.types.ts
+    token_id = payload.get("token_id")
+    os_user_id = payload.get("user_id") # OS defines this as user_id
+    email = payload.get("email")
+    name = payload.get("name")
+    user_type = payload.get("user_type") # 'employee' or 'client'
+    department_slug = payload.get("department_slug")
+    department_name = payload.get("department_name")
+    org_id = payload.get("org_id")  # Client org (null for employees)
+    is_app_admin = payload.get("is_app_admin", False)
+    is_team_lead = payload.get("is_team_lead", False)
 
     if not all([token_id, os_user_id, email]):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="SSO token payload is incomplete",
-        )
+        raise HTTPException(status_code=401, detail="SSO token payload is incomplete")
 
     # ── 2. Check token has not been used already (replay attack) ──
     existing_log = (
@@ -164,6 +159,7 @@ def sso_login(body: SsoRequest, db: Session = Depends(get_db)):
         user.full_name = name or user.full_name
         user.email = email or user.email
         user.department_slug = department_slug
+        user.org_id = org_id
         user.is_app_admin = is_app_admin
         if user.os_user_id is None:
             user.os_user_id = os_user_id
@@ -172,6 +168,8 @@ def sso_login(body: SsoRequest, db: Session = Depends(get_db)):
         # user_type distinguishes EMPLOYEE vs CLIENT for everyone else
         if is_app_admin:
             target_role_name = "ADMIN"
+        elif is_team_lead:
+            target_role_name = "TEAM LEAD"
         elif user_type == "client":
             target_role_name = "CLIENT"
         else:
@@ -190,6 +188,8 @@ def sso_login(body: SsoRequest, db: Session = Depends(get_db)):
         # user_type distinguishes EMPLOYEE vs CLIENT for everyone else
         if is_app_admin:
             role_name = "ADMIN"
+        elif is_team_lead:
+            role_name = "TEAM LEAD"
         elif user_type == "client":
             role_name = "CLIENT"
         else:
@@ -210,13 +210,12 @@ def sso_login(body: SsoRequest, db: Session = Depends(get_db)):
 
         user = models.User(
             email=email,
-            username=email.split("@")[0],  # simple default username
-            password_hash="SSO_USER_NO_PASSWORD",  # SSO users never use password
             full_name=name or email,
             role_id=role.id,
             is_active=True,
             os_user_id=os_user_id,
             department_slug=department_slug,
+            org_id=org_id,
             is_app_admin=is_app_admin,
         )
         db.add(user)
@@ -243,5 +242,7 @@ def sso_login(body: SsoRequest, db: Session = Depends(get_db)):
             "role": {"name": user.role.name} if user.role else None,
             "is_app_admin": user.is_app_admin,
             "department_slug": user.department_slug,
+            "department_name": department_name,
+            "org_id": user.org_id,
         },
     )

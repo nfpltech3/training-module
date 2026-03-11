@@ -32,8 +32,8 @@ export default function AdminReports() {
             ]);
             setSummaryData(reportsRes.data);
             setFilteredData(reportsRes.data);
-            // Only keep non-global departments for filtering employees
-            setDepartments(deptsRes.data.filter(d => !d.is_global));
+            // OS departments — no is_global filter needed anymore
+            setDepartments(deptsRes.data);
         } catch (err) {
             console.error("Failed to load reports:", err);
             setError("Unable to load reporting data. Ensure you have admin privileges.");
@@ -47,7 +47,7 @@ export default function AdminReports() {
 
         // Apply department filter
         if (selectedDept) {
-            result = result.filter(r => r.department_name === selectedDept);
+            result = result.filter(r => r.department_slug === selectedDept);
         }
 
         // Apply search filter
@@ -55,7 +55,7 @@ export default function AdminReports() {
             const term = searchTerm.toLowerCase();
             result = result.filter(r =>
                 r.full_name.toLowerCase().includes(term) ||
-                r.department_name.toLowerCase().includes(term)
+                (r.department_slug || '').toLowerCase().includes(term)
             );
         }
 
@@ -119,19 +119,21 @@ export default function AdminReports() {
                             />
                         </div>
 
-                        <div className="flex items-center gap-2 w-full sm:w-auto">
-                            <Filter className="w-5 h-5 text-slate-400 shrink-0" />
-                            <select
-                                value={selectedDept}
-                                onChange={(e) => setSelectedDept(e.target.value)}
-                                className="w-full sm:w-56 px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white transition outline-none text-sm font-medium text-slate-700"
-                            >
-                                <option value="">All Departments</option>
-                                {departments.map(d => (
-                                    <option key={d.id} value={d.name}>{d.name}</option>
-                                ))}
-                            </select>
-                        </div>
+                        {departments.length > 1 && (
+                            <div className="flex items-center gap-2 w-full sm:w-auto">
+                                <Filter className="w-5 h-5 text-slate-400 shrink-0" />
+                                <select
+                                    value={selectedDept}
+                                    onChange={(e) => setSelectedDept(e.target.value)}
+                                    className="w-full sm:w-56 px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white transition outline-none text-sm font-medium text-slate-700"
+                                >
+                                    <option value="">All Departments</option>
+                                    {departments.map(d => (
+                                        <option key={d.slug} value={d.slug}>{d.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        )}
                     </div>
 
                     {/* Data Table */}
@@ -164,7 +166,7 @@ export default function AdminReports() {
                                                 className="hover:bg-blue-50/50 cursor-pointer transition group"
                                             >
                                                 <td className="p-4 pl-6 font-semibold text-slate-800">{row.full_name}</td>
-                                                <td className="p-4 text-slate-600">{row.department_name}</td>
+                                                <td className="p-4 text-slate-600">{row.department_slug || 'N/A'}</td>
                                                 <td className="p-4 text-center font-medium text-slate-700">{row.total_visible}</td>
                                                 <td className="p-4 text-center font-bold text-green-600">{row.completed}</td>
                                                 <td className="p-4 text-center font-bold text-amber-500">{row.pending}</td>
@@ -200,7 +202,7 @@ export default function AdminReports() {
                         <div className="bg-white px-6 py-4 border-b border-slate-200 flex justify-between items-center shrink-0">
                             <div>
                                 <h3 className="text-xl font-bold text-slate-800">{selectedUser.full_name}'s Progress</h3>
-                                <p className="text-sm text-slate-500">{selectedUser.department_name} • {selectedUser.completed} of {selectedUser.total_visible} items completed</p>
+                                <p className="text-sm text-slate-500">{selectedUser.department_slug || 'N/A'} • {selectedUser.completed} of {selectedUser.total_visible} items completed</p>
                             </div>
                             <button onClick={closeModal} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition">
                                 <X className="w-6 h-6" />

@@ -62,7 +62,7 @@ export default function SsoPage() {
         fontFamily: 'sans-serif',
       }}>
         <p style={{ color: '#f87171', marginBottom: 16 }}>{error}</p>
-        <a href="http://localhost:3000/dashboard" style={{ color: '#60a5fa', fontSize: 14 }}>
+        <a href="http://192.168.1.23:3000/dashboard" style={{ color: '#60a5fa', fontSize: 14 }}>
           ← Return to OS Portal
         </a>
       </div>

@@ -41,7 +41,7 @@ export default function App() {
             <Route
               path="admin"
               element={
-                <ProtectedRoute requireAdmin>
+                <ProtectedRoute requireManager>
                   <AdminDashboard />
                 </ProtectedRoute>
               }
@@ -49,7 +49,7 @@ export default function App() {
             <Route
               path="admin/reports"
               element={
-                <ProtectedRoute requireAdmin>
+                <ProtectedRoute requireManager>
                   <AdminReports />
                 </ProtectedRoute>
               }

@@ -71,7 +71,7 @@ export default function LoginPage() {
                                 <p>{error}</p>
                                 {error.includes('portal') && (
                                     <a
-                                        href="http://localhost:3000"
+                                        href="http://192.168.1.23:3000"
                                         style={{ color: '#2563eb', fontSize: 13, display: 'block', marginTop: 6 }}
                                     >
                                         → Go to Nagarkot OS Portal

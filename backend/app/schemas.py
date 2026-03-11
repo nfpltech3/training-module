@@ -6,7 +6,7 @@ from .models import ModuleTypeEnum, ContentTypeEnum
 
 # --- Auth Schemas ---
 class LoginRequest(BaseModel):
-    identifier: str    # email or username
+    identifier: str    # email
     password: str
 
 
@@ -25,73 +25,31 @@ class RoleResponse(BaseModel):
         from_attributes = True
 
 
-# --- Department Schemas ---
-class DepartmentBase(BaseModel):
-    name: str
-
-class DepartmentCreate(DepartmentBase):
-    pass
-
-
-class DepartmentUpdate(BaseModel):
-    name: Optional[str] = None
-
-
-class DepartmentResponse(DepartmentBase):
-    id: str
-
-    class Config:
-        from_attributes = True
-
-
 # --- User Schemas ---
-class UserBase(BaseModel):
-    email: EmailStr
-    username: Optional[str] = None
-    full_name: str
-    department_id: Optional[str] = None
-    role_id: str
-
-
-class UserCreate(UserBase):
-    password: str
-
-
-class UserUpdate(BaseModel):
-    username: Optional[str] = None
-    password: Optional[str] = None
-
-
 class AdminUserUpdate(BaseModel):
-    email: Optional[EmailStr] = None
-    username: Optional[str] = None
-    password: Optional[str] = None
-    full_name: Optional[str] = None
-    department_id: Optional[str] = None
+    # Training Admins can only edit these two fields now
     role_id: Optional[str] = None
     is_active: Optional[bool] = None
 
 
 class UserResponse(BaseModel):
     id: str
-    email: str
-    username: str
+    os_user_id: str
+    email: EmailStr
     full_name: str
+    department_slug: Optional[str] = None
+    org_id: Optional[str] = None
+    is_app_admin: bool
     role_id: str
     role: Optional[RoleResponse] = None
-    department_id: Optional[str] = None
-    department: Optional[DepartmentResponse] = None
     is_active: bool
     created_at: datetime
-    os_user_id: Optional[str] = None
-    department_slug: Optional[str] = None
-    is_app_admin: bool = False
 
     class Config:
         from_attributes = True
 
 
-# --- Content Schemas (defined before Module so ModuleResponse can reference it) ---
+# --- Content Schemas ---
 class ContentBase(BaseModel):
     title: str
     description: Optional[str] = None
@@ -132,8 +90,9 @@ class ContentResponse(ContentBase):
 class ModuleBase(BaseModel):
     title: str
     description: Optional[str] = None
-    module_type: ModuleTypeEnum = ModuleTypeEnum.DEPARTMENT_TRAINING
-    department_ids: List[str] = []
+    module_type: Optional[ModuleTypeEnum] = None
+    department_slugs: List[str] = []
+    org_ids: List[str] = []
     role_ids: List[str] = []
     sequence_index: int = 0
 
@@ -144,7 +103,8 @@ class ModuleUpdate(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
     module_type: Optional[ModuleTypeEnum] = None
-    department_ids: Optional[List[str]] = None
+    department_slugs: Optional[List[str]] = None
+    org_ids: Optional[List[str]] = None
     role_ids: Optional[List[str]] = None
     sequence_index: Optional[int] = None
     is_active: Optional[bool] = None
@@ -153,9 +113,10 @@ class ModuleResponse(BaseModel):
     id: str
     title: str
     description: Optional[str] = None
-    module_type: ModuleTypeEnum
+    module_type: Optional[ModuleTypeEnum] = None
     sequence_index: int
-    departments: List[DepartmentResponse] = []
+    department_slugs: List[str] = []
+    org_ids: List[str] = []
     roles: List[RoleResponse] = []
     is_active: bool
     created_at: datetime
@@ -184,16 +145,20 @@ class ProgressResponse(BaseModel):
         from_attributes = True
 
 
-# --- Reorder Schema ---
+# --- Reorder / Move Schemas ---
 class ReorderRequest(BaseModel):
     direction: str  # "up" or "down"
+
+
+class MoveRequest(BaseModel):
+    new_index: int
 
 
 # --- Admin Reporting Schemas ---
 class UserSummaryReport(BaseModel):
     user_id: str
     full_name: str
-    department_name: str
+    department_slug: Optional[str] = None
     total_visible: int
     completed: int
     pending: int

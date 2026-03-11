@@ -198,6 +198,7 @@ export default function ModuleViewer() {
                                         // Remount completely when changing items so video unloads cleanly
                                         key={activeItem.id}
                                         embedUrl={activeItem.embed_url}
+                                        initialTime={progressMap.get(activeItem.id)?.furthest_second_watched || 0}
                                         onProgressUpdate={handleProgressUpdate}
                                     />
                                 ) : (

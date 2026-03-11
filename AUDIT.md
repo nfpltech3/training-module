@@ -1,289 +1,410 @@
-# Audit — OS↔Trainings Deactivation & Inbound Webhook Gap Analysis
-**Date:** 2026-03-09  
-**Auditor:** GitHub Copilot  
-**Scope:** Read-only. No changes made.
+# Audit Report: Training App and Company OS Integration
+
+**Date**: 2026-03-10
+**Scope**: Recent changes in Training Module backend and frontend, and its integration with the Nagarkot OS Platform.
 
 ---
 
-## 1. Does OS notify Trainings when a user is deactivated?
+## 1. MODELS — FULL CURRENT STATE
 
-**Answer: NO.**
-
-There is no inbound webhook, no listener endpoint, and no polling job in the Trainings backend that receives a deactivation or deletion event from OS.
-
-The flow is **one-way and outbound only**: when a Trainings admin marks a user as `is_active=false`, Trainings calls OS to push that change (`PATCH /users/{os_user_id}`). The reverse — OS calling Trainings when it deactivates a user — does not exist.
-
-A user deactivated in OS will remain `is_active=true` in the Trainings database and will be blocked only if:
-- They attempt to log in via SSO (the `verify-session` check in sso.py catches it — see Point 5), or
-- They attempt a password login and OS rejects the `verify-password` call.
-
-A user who already holds a valid Trainings JWT can continue to access Trainings until that token expires (no real-time revocation).
-
----
-
-## 2. Does any endpoint exist to deactivate/delete a user by os_user_id?
-
-**Answer: NO.**
-
-There is no endpoint in `main.py` or `sso.py` that accepts an inbound call keyed by `os_user_id` to deactivate or delete a user. Every endpoint here is either:
-- Frontend-facing (requires a Trainings JWT via `get_current_user` / `require_admin`), or
-- Outbound (Trainings calling OS, not OS calling Trainings).
-
-The only endpoint that touches `is_active` is:
-
-```
-PUT /admin/users/{user_id}
-```
-
-This requires a Trainings JWT with ADMIN role. There is no equivalent endpoint for OS to call with an `os_user_id`.
-
----
-
-## 3. admin_update_user() — the is_active=false block
-
-File: `backend/app/main.py`, lines ~317–377
-
-The full `admin_update_user` function, with the deactivation notification block:
+The following is the complete current code of `backend/app/models.py`.
 
 ```python
-@app.put("/admin/users/{user_id}", response_model=schemas.UserResponse)
-def admin_update_user(user_id: str, payload: schemas.AdminUserUpdate,
-                      db: Session = Depends(get_db),
-                      admin: models.User = Depends(require_admin)):
-    db_user = db.query(models.User).filter(models.User.id == user_id).first()
-    if not db_user:
-        raise HTTPException(status_code=404, detail="User not found")
+import uuid
+import enum
+from datetime import datetime
+from sqlalchemy import Column, String, Boolean, Integer, ForeignKey, DateTime, Enum, Text, Table
+from sqlalchemy.orm import relationship
+from .database import Base
 
-    update_data = payload.model_dump(exclude_unset=True)
-    if "password" in update_data:
-        if update_data["password"]:
-            db_user.password_hash = hash_password(update_data["password"])
-        del update_data["password"]
-    if "email" in update_data and update_data["email"]:
-        if db.query(models.User).filter(models.User.email == update_data["email"],
-                                        models.User.id != user_id).first():
-            raise HTTPException(status_code=400, detail="Email taken")
-        db_user.email = update_data["email"]
-    update_data.pop("email", None)
+def generate_uuid():
+    return str(uuid.uuid4())
 
-    # [FIX 2 guard — ADMIN role protection]
-    if "role_id" in update_data and update_data["role_id"] is not None:
-        admin_role = db.query(models.Role).filter(models.Role.name == "ADMIN").first()
-        if admin_role and update_data["role_id"] == admin_role.id:
-            if not db_user.is_app_admin:
-                raise HTTPException(status_code=403, detail="ADMIN role can only be granted via OS portal...")
+class ModuleTypeEnum(str, enum.Enum):
+    DEPARTMENT_TRAINING = "Department Training"
+    CLIENT_TRAINING = "Client Training"
+    ON_BOARDING = "On-Boarding"
 
-    for key, value in update_data.items():
-        if value is not None:
-            setattr(db_user, key, value)
+class ContentTypeEnum(str, enum.Enum):
+    VIDEO = "VIDEO"
+    DOCUMENT = "DOCUMENT"
 
-    # [FIX 3 — department_slug sync]
-    if "department_id" in update_data:
-        if update_data["department_id"]:
-            dept = db.query(models.Department).filter(
-                models.Department.id == update_data["department_id"]
-            ).first()
-            if dept:
-                db_user.department_slug = dept.name.lower().replace(" ", "_")
-        else:
-            db_user.department_slug = None
+# --- Association Tables ---
+module_roles = Table(
+    'module_roles', Base.metadata,
+    Column('module_id', String, ForeignKey('modules.id', ondelete="CASCADE"), primary_key=True),
+    Column('role_id', String, ForeignKey('roles.id', ondelete="CASCADE"), primary_key=True)
+)
 
-    db.commit()
-    db.refresh(db_user)
+# Maps a module to OS Department Slugs (e.g., 'tech', 'freight')
+class ModuleDepartmentSlug(Base):
+    __tablename__ = "module_department_slugs"
+    module_id = Column(String, ForeignKey('modules.id', ondelete="CASCADE"), primary_key=True)
+    department_slug = Column(String, primary_key=True)
 
-    # If user was deactivated, notify OS
-    if 'is_active' in update_data and not update_data['is_active']:
-        if db_user.os_user_id:
-            try:
-                httpx.patch(
-                    f"{OS_BACKEND_URL}/users/{db_user.os_user_id}",
-                    json={"is_active": False},
-                    headers={"x-internal-key": INTERNAL_API_KEY},
-                    timeout=5.0,
-                )
-            except httpx.RequestError:
-                # Log but don't block — local deactivation still happened
-                print(f"WARNING: Could not deactivate user {db_user.os_user_id} in OS")
+# Maps a module to specific OS Client Organizations (org walls)
+class ModuleClientOrg(Base):
+    __tablename__ = "module_client_orgs"
+    module_id = Column(String, ForeignKey('modules.id', ondelete="CASCADE"), primary_key=True)
+    org_id = Column(String, primary_key=True)
 
-    return db_user
-```
+class Role(Base):
+    __tablename__ = "roles"
+    id = Column(String, primary_key=True, default=generate_uuid)
+    name = Column(String, unique=True, index=True, nullable=False)
 
-**Key observations on the deactivation block:**
-- It only fires when `is_active` is explicitly in the payload **and** set to `false`.
-- It calls `PATCH {OS_BACKEND_URL}/users/{os_user_id}` with `{"is_active": false}`.
-- If `db_user.os_user_id` is `None` (local-only user), **OS is never notified** — silent.
-- If the OS call fails (`httpx.RequestError`), it only prints a warning. The local deactivation has already been committed. No retry, no alarm.
-- The OS call happens **after** `db.commit()` — the local deactivation is permanent even if OS call fails.
-- There is **no response check** on the OS PATCH — if OS returns 400 or 500, Trainings ignores it.
+class User(Base):
+    __tablename__ = "users"
+    id = Column(String, primary_key=True, default=generate_uuid)
+    os_user_id = Column(String, unique=True, index=True, nullable=False) # The true identity link
+    email = Column(String, index=True, nullable=False) # Read-only cache
+    full_name = Column(String, nullable=False)         # Read-only cache
+    department_slug = Column(String, nullable=True)    # Read-only cache from OS
+    org_id = Column(String, nullable=True)             # Read-only cache from OS (client org)
+    is_app_admin = Column(Boolean, default=False)      # Read-only cache from OS
+    
+    role_id = Column(String, ForeignKey("roles.id"), nullable=False)
+    role = relationship("Role")
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
----
+class Module(Base):
+    __tablename__ = "modules"
+    id = Column(String, primary_key=True, default=generate_uuid)
+    title = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    module_type = Column(Enum(ModuleTypeEnum), default=ModuleTypeEnum.DEPARTMENT_TRAINING)
+    
+    roles = relationship("Role", secondary=module_roles, backref="modules")
+    department_slugs = relationship("ModuleDepartmentSlug", cascade="all, delete-orphan")
+    client_orgs = relationship("ModuleClientOrg", cascade="all, delete-orphan")
+    
+    sequence_index = Column(Integer, default=0)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
-## 4. What happens when a user logs in with a deactivated OS account?
-
-### 4a. SSO login path (`POST /auth/sso` via sso.py)
-
-**Trace:**
-
-1. Token is decoded (RS256 signature verified).
-2. Replay check passes.
-3. Token is consumed (written to `SsoTokenLog`).
-4. **Step 3b — verify-session call to OS:**
-   ```python
-   check = httpx.post(
-       f"{OS_BACKEND_URL}/auth/verify-session",
-       json={"os_user_id": os_user_id},
-       headers={"x-internal-key": INTERNAL_API_KEY},
-       timeout=5.0,
-   )
-   if check.status_code == 200 and not check.json().get("is_active", True):
-       raise HTTPException(status_code=403,
-           detail="Your account has been deactivated. Contact your administrator.")
-   ```
-   - If OS returns `{"is_active": false}` → **403 Forbidden, access denied**. ✓
-   - If OS is unreachable (`httpx.RequestError`) → **fail open**: warning is logged, login proceeds.
-5. If step 4 passes: local user is found or created, Trainings JWT is issued.
-6. Final `is_active` check on local user: if `is_active=false` in Trainings DB → **403 Forbidden**.
-
-**Result:** A user whose OS account is deactivated is blocked at step 4 **only if OS is reachable**. If OS is down, the deactivated user can still log in.
-
----
-
-### 4b. Password login path (`POST /auth/login` in main.py)
-
-**Trace:**
-
-1. User looked up by email/username.
-2. Local `is_active` check:
-   ```python
-   if not user.is_active:
-       raise HTTPException(status_code=403, detail="Account is deactivated")
-   ```
-   - If local `is_active=false` → **403 immediately**. But this only helps if Trainings was already notified.
-3. If user's `password_hash == "SSO_USER_NO_PASSWORD"` (SSO user):
-   ```python
-   res = httpx.post(
-       f"{OS_BACKEND_URL}/auth/verify-password",
-       json={"email": user.email, "password": payload.password, "app_slug": "trainings"},
-       headers={"x-internal-key": INTERNAL_API_KEY},
-       timeout=10.0,
-   )
-   data = res.json()
-   if res.status_code != 200 or not data.get("valid"):
-       raise HTTPException(status_code=401, detail="Invalid email or password")
-   ```
-   - OS's `verify-password` endpoint is expected to return `valid: false` for a deactivated user. If it does → **401** (user sees "invalid password", not a clear deactivation message).
-   - If OS is unreachable → **503 service unavailable**.
-4. Local user: password check is entirely local — OS deactivation has **zero effect** unless Trainings was already notified.
-
-**Result for SSO users at password login:** Blocked at the `verify-password` step, **but the error message ("Invalid email or password") does not tell them they were deactivated**. A separate `reason=no_app_access` path exists for app access revocation, but no explicit deactivated-account reason is handled.
-
-**Result for local (non-SSO) users:** Only the local `is_active` flag matters. OS deactivation has no effect on local users at login.
-
----
-
-## 5. Full verify-session call in sso.py
-
-File: `backend/app/sso.py`, lines ~119–135
-
-```python
-# ── 3b. Verify user is still active in OS ─────────────────────
-try:
-    check = httpx.post(
-        f"{OS_BACKEND_URL}/auth/verify-session",
-        json={"os_user_id": os_user_id},
-        headers={"x-internal-key": INTERNAL_API_KEY},
-        timeout=5.0,
+    content_items = relationship(
+        "Content", back_populates="module",
+        order_by="Content.sequence_index"
     )
-    if check.status_code == 200 and not check.json().get("is_active", True):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Your account has been deactivated. Contact your administrator.",
-        )
-except httpx.RequestError:
-    # OS unreachable — fail open, log warning
-    print(f"WARNING: Could not reach OS to verify user {os_user_id} — proceeding")
+
+class Content(Base):
+    __tablename__ = "content"
+    id = Column(String, primary_key=True, default=generate_uuid)
+    title = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    content_type = Column(Enum(ContentTypeEnum), nullable=False)
+    embed_url = Column(String, nullable=True)       
+    document_url = Column(String, nullable=True)     
+    module_id = Column(String, ForeignKey("modules.id"), nullable=False)
+    module = relationship("Module", back_populates="content_items")
+    sequence_index = Column(Integer, default=0)
+    total_duration = Column(Integer, nullable=True)  
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class UserProgress(Base):
+    __tablename__ = "user_progress"
+    id = Column(String, primary_key=True, default=generate_uuid)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    content_id = Column(String, ForeignKey("content.id", ondelete="CASCADE"), nullable=False)
+    furthest_second_watched = Column(Integer, default=0) 
+    is_completed = Column(Boolean, default=False)
+    completed_at = Column(DateTime, nullable=True)
+    last_accessed_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class SsoTokenLog(Base):
+    __tablename__ = "sso_token_log"
+    token_id = Column(String, primary_key=True)
+    used = Column(Boolean, default=True)
+    consumed_at = Column(DateTime, default=datetime.utcnow)
+    app_slug = Column(String, nullable=True)
 ```
 
-**What it checks:** Posts `{"os_user_id": ...}` to OS `/auth/verify-session` with the internal API key. Reads `is_active` from the response.
+### RECENT CHANGES BY MODEL/ASSOCIATION:
 
-**What it does if OS says `is_active=false`:** Returns HTTP 403 with message `"Your account has been deactivated. Contact your administrator."` — the SSO token is already consumed (replay-safe) so a deactivated user cannot retry with the same token.
-
-**What it does if OS is unreachable:** Fails open — catches `httpx.RequestError`, prints a warning to stdout, and continues as if the user is active. This is an explicit design choice (comment says "fail open").
-
-**What it does NOT check:**
-- It does not check the HTTP status code other than 200. If OS returns 4xx or 5xx (not a network error), the `check.json()` call may raise an exception that is not caught, potentially crashing the request.
-- It does not sync the local `is_active` flag — even if OS says the user is inactive, Trainings does not update `users.is_active` in the DB at this point. The user remains `is_active=true` locally.
-
----
-
-## 6. Background sync job / polling mechanism
-
-**Answer: NO.**
-
-There is no background job, scheduled task, cron, or polling mechanism anywhere in the Trainings backend that:
-- Periodically syncs user state from OS
-- Checks which users OS has deactivated and mirrors that locally
-- Runs any async or scheduled work
-
-The only file that could contain such logic was checked: `main.py`, `sso.py`, `auth.py`, `models.py`, `database.py`, `schemas.py`. None contain `threading`, `asyncio` (beyond FastAPI's own), `apscheduler`, `celery`, `BackgroundTasks`, `cron`, or any similar mechanism.
-
-Sync only happens at authentication time (SSO login or password login).
-
----
-
-## 7. All Trainings backend endpoints designed to receive inbound calls from OS
-
-**Answer: NONE.**
-
-There is no endpoint in `main.py` or `sso.py` that is designed to be called **by OS** (inbound direction). Every endpoint either:
-- Requires a Trainings JWT (`get_current_user` or `require_admin`) — OS has no Trainings JWT, so it cannot call these, or
-- Is the SSO endpoint (`POST /auth/sso`) which is called by the **Trainings frontend** (not directly by OS), or
-- Is publicly accessible but not keyed by internal API key or `os_user_id` for OS use.
-
-### Full endpoint inventory with caller intent:
-
-| Method | Path | Auth | Designed caller |
-|--------|------|------|----------------|
-| GET | `/` | None | Anyone (healthcheck) |
-| POST | `/auth/sso` | RS256 SSO token | Trainings frontend (after OS redirect) |
-| POST | `/auth/login` | None (validates credentials) | Trainings frontend |
-| GET | `/departments/` | None | Trainings frontend |
-| POST | `/departments/` | Trainings JWT (ADMIN) | Trainings frontend (admin) |
-| PUT | `/departments/{dept_id}` | Trainings JWT (ADMIN) | Trainings frontend (admin) |
-| POST | `/users/` | Trainings JWT (ADMIN) | Trainings frontend (admin) |
-| GET | `/users/me` | Trainings JWT | Trainings frontend |
-| PUT | `/users/me` | Trainings JWT | Trainings frontend |
-| GET | `/users/` | Trainings JWT (ADMIN) | Trainings frontend (admin) |
-| PUT | `/admin/users/{user_id}` | Trainings JWT (ADMIN) | Trainings frontend (admin) |
-| GET | `/roles/` | None | Trainings frontend |
-| GET | `/modules/` | Trainings JWT | Trainings frontend |
-| POST | `/modules/` | Trainings JWT (ADMIN) | Trainings frontend (admin) |
-| PUT | `/modules/{module_id}` | Trainings JWT (ADMIN) | Trainings frontend (admin) |
-| PUT | `/modules/{module_id}/reorder` | Trainings JWT (ADMIN) | Trainings frontend (admin) |
-| POST | `/content/` | Trainings JWT (ADMIN) | Trainings frontend (admin) |
-| PUT | `/content/{content_id}` | Trainings JWT (ADMIN) | Trainings frontend (admin) |
-| PUT | `/content/{content_id}/reorder` | Trainings JWT (ADMIN) | Trainings frontend (admin) |
-| POST | `/content/upload-document` | Trainings JWT (ADMIN) | Trainings frontend (admin) |
-| POST | `/progress/` | Trainings JWT | Trainings frontend |
-| GET | `/progress/` | Trainings JWT | Trainings frontend |
-| GET | `/admin/reports/summary` | Trainings JWT (ADMIN) | Trainings frontend (admin) |
-| GET | `/admin/reports/user/{user_id}` | Trainings JWT (ADMIN) | Trainings frontend (admin) |
-
-**No endpoint accepts an `x-internal-key` header for OS to call Trainings.** The key only flows outbound (Trainings → OS).
+*   **`Role`**: *Unchanged* structure (ID, Name).
+*   **`User`**:
+    *   **New Field**: `os_user_id` (Primary identity link to OS).
+    *   **New Field**: `department_slug` (Cached string for visibility logic).
+    *   **New Field**: `org_id` (Cached organization link).
+    *   **New Field**: `is_app_admin` (Permissions flag synced from OS).
+    *   **Identity Logic**: Password/Username fields removed in favor of `os_user_id` and SSO.
+*   **`Module`**:
+    *   **New Association Table**: `module_department_slugs` (Replaces old `department_id` link with multi-select slugs).
+    *   **New Association Table**: `module_client_orgs` (New targeting for client visibility).
+    *   **New Field**: `sequence_index` (Supports custom ordering in UI).
+    *   **New Enum**: `ModuleTypeEnum` (Department Training vs Client vs On-boarding).
+*   **`module_roles`**: *Unchanged* structure.
+*   **`Content`**:
+    *   **New Field**: `sequence_index` (Supports drag-and-drop order).
+    *   **Simplified Fields**: `embed_url` and `document_url` used for different content types.
+*   **`UserProgress`**:
+    *   **Cascade Delete**: Migration `migrate_cascade.py` added `ON DELETE CASCADE` to prevent orphan records when users are deleted via OS webhooks.
+*   **`SsoTokenLog`**: (NEW) Tracks token IDs to prevent replay attacks during the SSO flow.
+*   **`ModuleDepartmentSlug`**: (NEW) Mapping table for departmental targeting.
+*   **`ModuleClientOrg`**: (NEW) Mapping table for client organization walls.
 
 ---
 
-## Summary of Gaps Found
+## 2. DATABASE — NEW TABLES AND MIGRATIONS
 
-| # | Gap | Severity |
-|---|-----|----------|
-| G1 | No inbound webhook endpoint for OS to notify Trainings of user deactivation | High |
-| G2 | No inbound webhook endpoint for OS to notify Trainings of user deletion | High |
-| G3 | `verify-session` fails open — OS unreachable = deactivated user can still SSO in | Medium |
-| G4 | `verify-session` response: non-200 (non-network) errors are not caught — may crash request | Medium |
-| G5 | Local `users.is_active` is never synced from OS (only set by Trainings admin action) | Medium |
-| G6 | Outbound deactivation PATCH to OS has no response validation — silent if OS rejects it | Low |
-| G7 | Outbound deactivation PATCH skipped if `os_user_id` is null — local-only users never synced | Low |
-| G8 | Password login failure message for deactivated SSO users is "Invalid email or password" — not informative | Low |
-| G9 | No background sync — a user deactivated in OS retains full Trainings access until next login attempt | Medium |
-| G10 | Valid Trainings JWTs are not revoked when a user is deactivated — existing sessions continue until token expiry | Medium |
+Alembic migrations in `backend/alembic/versions/` were not found during this audit. Instead, manual migration scripts were used for recent schema changes.
+
+### NEW MIGRATIONS (MANUAL SCRIPTS):
+**`backend/migrate_sso.py`**:
+```python
+"""One-time migration: add os_user_id column and create sso_token_log table."""
+import sqlite3
+import os
+
+db_path = os.path.join(os.path.dirname(__file__), "nagarkot.db")
+
+if not os.path.exists(db_path):
+    print("nagarkot.db not found — column will be created on first server startup.")
+else:
+    con = sqlite3.connect(db_path)
+    cur = con.cursor()
+
+    # Add os_user_id to users (ignore error if column already exists)
+    try:
+        cur.execute("ALTER TABLE users ADD COLUMN os_user_id VARCHAR")
+        print("Added os_user_id column to users table.")
+    except sqlite3.OperationalError as e:
+        print(f"os_user_id: {e}")
+
+    # Partial unique index
+    try:
+        cur.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_os_user_id "
+            "ON users(os_user_id) WHERE os_user_id IS NOT NULL"
+        )
+        print("Created unique index on os_user_id.")
+    except sqlite3.OperationalError as e:
+        print(f"Index: {e}")
+
+    con.commit()
+    con.close()
+    print("Migration complete.")
+```
+
+**`backend/migrate_cascade.py`**:
+```python
+import sqlite3
+
+conn = sqlite3.connect("nagarkot.db")
+cur = conn.cursor()
+
+cur.executescript("""
+PRAGMA foreign_keys = OFF;
+
+CREATE TABLE user_progress_new (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    content_id TEXT NOT NULL REFERENCES content(id) ON DELETE CASCADE,
+    furthest_second_watched INTEGER DEFAULT 0,
+    is_completed BOOLEAN DEFAULT 0,
+    completed_at DATETIME,
+    last_accessed_at DATETIME
+);
+
+INSERT INTO user_progress_new SELECT * FROM user_progress;
+
+DROP TABLE user_progress;
+
+ALTER TABLE user_progress_new RENAME TO user_progress;
+
+PRAGMA foreign_keys = ON;
+""")
+
+conn.commit()
+conn.close()
+```
+
+---
+
+## 3. SSO AND AUTH — FULL CURRENT STATE
+
+### `backend/app/sso.py`:
+This file handles the RS256 token verification and Just-In-Time (JIT) user syncing.
+*   **Identity Sync**: Syncs `full_name`, `email`, `department_slug`, `org_id`, and `is_app_admin` from the OS payload.
+*   **Replay Protection**: Verifies `SsoTokenLog` before consumption.
+*   **Role Logic**: Assigns `ADMIN` if `is_app_admin` is true, otherwise uses `user_type` map.
+
+### `backend/app/auth.py`:
+Handles the local HS256 JWT sessions for the Training App.
+*   `get_current_user` extracts the user based on the `sub` (local UUID) in the token.
+
+---
+
+## 4. MAIN.PY — FULL CURRENT ROUTE LIST AND CHANGED HANDLERS
+
+The following is the current route configuration in `backend/app/main.py`.
+
+### Route List:
+*   `GET /`: Health check.
+*   `POST /webhooks/os`: Handles user lifecycle events (deleted, deactivated, reactivated).
+*   `POST /auth/login`: Proxies credentials to OS and syncs local user cache.
+*   `GET /departments/`: Proxies OS departments (filtered for App Admins).
+*   `GET /client-organizations/`: Proxies OS client organizations.
+*   `GET /roles/`: Lists available roles.
+*   `GET /users/me`: Current user profile.
+*   `GET /users/`: (Admin) List users.
+*   `PUT /admin/users/{user_id}`: (Admin) Update role/active status (enforces OS admin rules).
+*   `GET /modules/`: Module list with complex visibility logic (dept/org targeting).
+*   `POST /modules/`: Create module (handles dept/org/role associations).
+*   `PUT /modules/{module_id}`: Update module.
+*   `PUT /modules/{module_id}/reorder`: Toggle reorder.
+*   `PUT /modules/{module_id}/move`: Drag and drop reorder.
+*   `POST /content/`: Add content.
+*   `PUT /content/{content_id}`: Update content.
+*   `PUT /content/{content_id}/move`: Drag and drop reorder.
+*   `POST /content/upload-document`: Multipart file upload.
+*   `POST /progress/`: Update learner progress.
+*   `GET /progress/`: Fetch own progress.
+*   `GET /admin/reports/summary`: Admin report aggregated by user (scoped by admin dept).
+*   `GET /admin/reports/user/{user_id}`: Detailed user report (scoped by admin dept).
+
+### CHANGED HANDLER: `GET /modules/`
+Enforces granular visibility:
+*   **App Admins with Department**: Forced to see only modules tagged for their department.
+*   **Clients**: Can only see modules tagged with `CLIENT` role matching their `org_id`.
+*   **Employees**: Can see modules tagged with `EMPLOYEE` role matching their `department_slug` or global modules (no slugs).
+
+---
+
+## 5. WEBHOOK HANDLER — FULL CURRENT STATE
+
+The webhook logic is located in `backend/app/main.py`.
+
+```python
+@app.post("/webhooks/os", status_code=200)
+def os_webhook(
+    payload: OsWebhookPayload,
+    x_internal_key: str = Header(default=""),
+    db: Session = Depends(get_db),
+):
+    if not INTERNAL_API_KEY or x_internal_key != INTERNAL_API_KEY:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    user = db.query(models.User).filter(
+        models.User.os_user_id == payload.os_user_id
+    ).first()
+
+    if not user:
+        return {"status": "ignored", "reason": "user_not_found"}
+
+    if payload.event == "user.deleted":
+        db.delete(user)
+        db.commit()
+        return {"status": "ok", "action": "hard_deleted"}
+
+    if payload.event == "user.deactivated":
+        user.is_active = False
+        db.commit()
+        return {"status": "ok", "action": "deactivated"}
+
+    if payload.event == "user.reactivated":
+        user.is_active = True
+        db.commit()
+        return {"status": "ok", "action": "reactivated"}
+
+    return {"status": "ignored", "reason": "unknown_event"}
+```
+
+---
+
+## 6. SCHEMAS — FULL CURRENT STATE
+
+Complete current code of `backend/app/schemas.py`.
+
+```python
+from pydantic import BaseModel, EmailStr
+from typing import Optional, List
+from datetime import datetime
+from .models import ModuleTypeEnum, ContentTypeEnum
+
+class UserResponse(BaseModel):
+    id: str
+    os_user_id: str
+    email: EmailStr
+    full_name: str
+    department_slug: Optional[str] = None
+    org_id: Optional[str] = None
+    is_app_admin: bool
+    role_id: str
+    role: Optional["RoleResponse"] = None
+    is_active: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class ModuleCreate(BaseModel):
+    title: str
+    description: Optional[str] = None
+    module_type: ModuleTypeEnum = ModuleTypeEnum.DEPARTMENT_TRAINING
+    department_slugs: List[str] = []
+    org_ids: List[str] = []
+    role_ids: List[str] = []
+    sequence_index: int = 0
+
+class ModuleResponse(BaseModel):
+    id: str
+    title: str
+    description: Optional[str] = None
+    module_type: ModuleTypeEnum
+    sequence_index: int
+    department_slugs: List[str] = []
+    org_ids: List[str] = []
+    roles: List["RoleResponse"] = []
+    is_active: bool
+    created_at: datetime
+    content_items: List["ContentResponse"] = []
+
+    class Config:
+        from_attributes = True
+```
+
+---
+
+## 7. FRONTEND CHANGES
+
+### ADDED/MODIFIED FILES:
+*   `frontend/src/pages/SsoPage.jsx`: (NEW) Handles the SSO login flow by consuming the token from the URL.
+*   `frontend/src/components/AdminModulesTab.jsx`: Complete overhaul to a dual-pane builder with drag-and-drop.
+*   `frontend/src/pages/LearnerDashboard.jsx`: Updated to filter modules by department/org tags.
+*   `frontend/src/lib/api.js`: Refactored to using Axios with interceptors for auth and new endpoint integrations.
+
+### Admin Targeting Logic (`AdminModulesTab.jsx`):
+Added modals for selecting target audience between Employees (filtered by Department) and Clients (filtered by Organization Walls).
+
+### SSO CONSUMPTION (`SsoPage.jsx`):
+```javascript
+useEffect(() => {
+  const token = searchParams.get('token');
+  if (!token) return;
+
+  async function consumeToken() {
+    const res = await fetch(`${API_BASE}/auth/sso`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token }),
+    });
+    const data = await res.json();
+    login(data.access_token, data.user);
+    navigate('/');
+  }
+  consumeToken();
+}, []);
+```
+
+---
+
+## 8. NEW FILES (ROOT & BACKEND)
+
+*   **`backend/cleanup_db.py`**: Manual script for reconciling duplicate admin accounts.
+*   **`backend/debug_users.py`**: Prints all local users and their OS Identity links.
+*   **`.pyre_configuration`**: Configures Pyre for type checking across the project.
+*   **`backend/migrate_sso.py`**: One-time schema migration script.
+*   **`backend/migrate_cascade.py`**: Adds `ON DELETE CASCADE` to progress tables.

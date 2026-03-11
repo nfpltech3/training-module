@@ -57,9 +57,9 @@ export default function LearnerDashboard() {
         return { total, completed, pct: Math.round(pct), isCompleted: total > 0 && completed === total };
     };
 
-    // --- UPDATED: Group modules based on the new departments array ---
-    const companyWide = modules.filter(m => m.departments?.some(d => d.is_global));
-    const deptSpecific = modules.filter(m => !m.departments?.some(d => d.is_global));
+    // --- Group modules: no department_slugs = company-wide, otherwise department-specific ---
+    const companyWide = modules.filter(m => !m.department_slugs || m.department_slugs.length === 0);
+    const deptSpecific = modules.filter(m => m.department_slugs && m.department_slugs.length > 0);
 
     const ModuleCard = ({ module }) => {
         const { total, completed, pct, isCompleted } = getModuleStats(module);
@@ -149,7 +149,7 @@ export default function LearnerDashboard() {
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
                                 </svg>
                             </span>
-                            {user?.department?.name ? `${user.department.name} Modules` : 'Your Department'}
+                            {user?.department_name ? `${user.department_name} Modules` : 'Your Department'}
                         </h2>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                             {deptSpecific.map(m => <ModuleCard key={m.id} module={m} />)}

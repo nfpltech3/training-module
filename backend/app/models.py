@@ -18,59 +18,54 @@ class ContentTypeEnum(str, enum.Enum):
     DOCUMENT = "DOCUMENT"
 
 # --- Association Tables ---
-module_departments = Table(
-    'module_departments', Base.metadata,
-    Column('module_id', String, ForeignKey('modules.id', ondelete="CASCADE"), primary_key=True),
-    Column('department_id', String, ForeignKey('departments.id', ondelete="CASCADE"), primary_key=True)
-)
-
 module_roles = Table(
     'module_roles', Base.metadata,
     Column('module_id', String, ForeignKey('modules.id', ondelete="CASCADE"), primary_key=True),
     Column('role_id', String, ForeignKey('roles.id', ondelete="CASCADE"), primary_key=True)
 )
 
+# Maps a module to OS Department Slugs (e.g., 'tech', 'freight')
+class ModuleDepartmentSlug(Base):
+    __tablename__ = "module_department_slugs"
+    module_id = Column(String, ForeignKey('modules.id', ondelete="CASCADE"), primary_key=True)
+    department_slug = Column(String, primary_key=True)
+
+# Maps a module to specific OS Client Organizations (org walls)
+class ModuleClientOrg(Base):
+    __tablename__ = "module_client_orgs"
+    module_id = Column(String, ForeignKey('modules.id', ondelete="CASCADE"), primary_key=True)
+    org_id = Column(String, primary_key=True)
+
 class Role(Base):
     __tablename__ = "roles"
-    id = Column(String, primary_key=True, default=generate_uuid)
-    name = Column(String, unique=True, index=True, nullable=False) # e.g. ADMIN, EMPLOYEE, CLIENT
-
-class Department(Base):
-    __tablename__ = "departments"
     id = Column(String, primary_key=True, default=generate_uuid)
     name = Column(String, unique=True, index=True, nullable=False)
 
 class User(Base):
     __tablename__ = "users"
     id = Column(String, primary_key=True, default=generate_uuid)
-    email = Column(String, unique=True, index=True, nullable=False)
-    username = Column(String, unique=True, index=True, nullable=False)
-    password_hash = Column(String, nullable=False)
-    full_name = Column(String, nullable=False)
+    os_user_id = Column(String, unique=True, index=True, nullable=False) # The true identity link
+    email = Column(String, index=True, nullable=False) # Read-only cache
+    full_name = Column(String, nullable=False)         # Read-only cache
+    department_slug = Column(String, nullable=True)    # Read-only cache from OS
+    org_id = Column(String, nullable=True)             # Read-only cache from OS (client org)
+    is_app_admin = Column(Boolean, default=False)      # Read-only cache from OS
+    
     role_id = Column(String, ForeignKey("roles.id"), nullable=False)
     role = relationship("Role")
-    department_id = Column(String, ForeignKey("departments.id"), nullable=True)
-    department = relationship("Department")
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
-
-    # ── SSO: links this user to their OS identity ──────────────────
-    os_user_id = Column(String, nullable=True, unique=True, index=True)
-
-    # Synced from OS on every SSO login — do not edit manually
-    department_slug = Column(String, nullable=True)   # e.g. 'operations', null for clients
-    is_app_admin = Column(Boolean, default=False)      # set by OS super admin
 
 class Module(Base):
     __tablename__ = "modules"
     id = Column(String, primary_key=True, default=generate_uuid)
     title = Column(String, nullable=False)
     description = Column(Text, nullable=True)
-    module_type = Column(Enum(ModuleTypeEnum), default=ModuleTypeEnum.DEPARTMENT_TRAINING)
+    module_type = Column(Enum(ModuleTypeEnum), nullable=True, default=None)
     
-    # --- UPDATED: Many-to-Many Relationship ---
-    departments = relationship("Department", secondary=module_departments, backref="modules")
     roles = relationship("Role", secondary=module_roles, backref="modules")
+    department_slugs = relationship("ModuleDepartmentSlug", cascade="all, delete-orphan")
+    client_orgs = relationship("ModuleClientOrg", cascade="all, delete-orphan")
     
     sequence_index = Column(Integer, default=0)
     is_active = Column(Boolean, default=True)
@@ -106,14 +101,9 @@ class UserProgress(Base):
     completed_at = Column(DateTime, nullable=True)
     last_accessed_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-
 class SsoTokenLog(Base):
-    """
-    Tracks consumed SSO tokens to prevent replay attacks.
-    Each token_id can only be used once.
-    """
     __tablename__ = "sso_token_log"
-    token_id = Column(String, primary_key=True)   # UUID from OS JWT payload
+    token_id = Column(String, primary_key=True)
     used = Column(Boolean, default=True)
     consumed_at = Column(DateTime, default=datetime.utcnow)
-    app_slug = Column(String, nullable=True)       # 'trainings'
+    app_slug = Column(String, nullable=True)

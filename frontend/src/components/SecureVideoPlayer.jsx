@@ -1,13 +1,16 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import YouTube from 'react-youtube';
 
-const SecureVideoPlayer = ({ embedUrl, onProgressUpdate }) => {
+const SecureVideoPlayer = ({ embedUrl, onProgressUpdate, initialTime = 0 }) => {
     const playerRef = useRef(null);
-    const furthestRef = useRef(0);
-    const [furthestWatched, setFurthestWatched] = useState(0);
+    const furthestRef = useRef(initialTime);
+    const isReadyRef = useRef(false);
+    const [furthestWatched, setFurthestWatched] = useState(initialTime);
     const [isCompleted, setIsCompleted] = useState(false);
     const [duration, setDuration] = useState(0);
     const intervalRef = useRef(null);
+    const heartbeatRef = useRef(null); // 10s backend sync
+    const lastSyncedRef = useRef(initialTime); // track what we last sent to backend
     const [isPlaying, setIsPlaying] = useState(false);
     const [isReady, setIsReady] = useState(false);
     const [hasStarted, setHasStarted] = useState(false);
@@ -40,20 +43,26 @@ const SecureVideoPlayer = ({ embedUrl, onProgressUpdate }) => {
             clearInterval(intervalRef.current);
             intervalRef.current = null;
         }
+        if (heartbeatRef.current) {
+            clearInterval(heartbeatRef.current);
+            heartbeatRef.current = null;
+        }
         if (fadeTimerRef.current) {
             clearTimeout(fadeTimerRef.current);
             fadeTimerRef.current = null;
         }
-        furthestRef.current = 0;
-        setFurthestWatched(0);
+        furthestRef.current = initialTime;
+        lastSyncedRef.current = initialTime;
+        setFurthestWatched(initialTime);
         setIsCompleted(false);
         setDuration(0);
         setIsPlaying(false);
         setIsReady(false);
+        isReadyRef.current = false;
         setHasStarted(false);
         setShowOverlayIcon(true);
         playerRef.current = null;
-    }, [videoId]);
+    }, [videoId, initialTime]);
 
     useEffect(() => {
         furthestRef.current = furthestWatched;
@@ -95,7 +104,13 @@ const SecureVideoPlayer = ({ embedUrl, onProgressUpdate }) => {
 
     const onPlayerReady = (event) => {
         playerRef.current = event.target;
+        isReadyRef.current = true;
         setIsReady(true);
+
+        // Resume from where the user left off
+        if (initialTime > 0) {
+            event.target.seekTo(initialTime, true);
+        }
     };
 
     const onStateChange = (event) => {
@@ -111,8 +126,19 @@ const SecureVideoPlayer = ({ embedUrl, onProgressUpdate }) => {
             if (fadeTimerRef.current) clearTimeout(fadeTimerRef.current);
             fadeTimerRef.current = setTimeout(() => setShowOverlayIcon(false), 400);
 
+            // 1-second anti-skip check
             if (!intervalRef.current) {
                 intervalRef.current = setInterval(checkProgress, 1000);
+            }
+            // 10-second backend heartbeat (only syncs if furthest moved)
+            if (!heartbeatRef.current) {
+                heartbeatRef.current = setInterval(() => {
+                    const current = furthestRef.current;
+                    if (current > lastSyncedRef.current) {
+                        lastSyncedRef.current = current;
+                        onProgressUpdate(Math.floor(current), false);
+                    }
+                }, 10000);
             }
         } else {
             // Paused/Stopped — show overlay icon immediately
@@ -123,18 +149,29 @@ const SecureVideoPlayer = ({ embedUrl, onProgressUpdate }) => {
                 clearInterval(intervalRef.current);
                 intervalRef.current = null;
             }
+            // Clear heartbeat and flush one final sync on pause
+            if (heartbeatRef.current) {
+                clearInterval(heartbeatRef.current);
+                heartbeatRef.current = null;
+                const current = furthestRef.current;
+                if (current > lastSyncedRef.current) {
+                    lastSyncedRef.current = current;
+                    onProgressUpdate(Math.floor(current), false);
+                }
+            }
         }
     };
 
     useEffect(() => {
         return () => {
             if (intervalRef.current) clearInterval(intervalRef.current);
+            if (heartbeatRef.current) clearInterval(heartbeatRef.current);
             if (fadeTimerRef.current) clearTimeout(fadeTimerRef.current);
         };
     }, []);
 
     const togglePlay = () => {
-        if (!playerRef.current || !isReady) return;
+        if (!playerRef.current || !isReadyRef.current) return; // ← use ref
         try {
             const state = playerRef.current.getPlayerState();
             if (state === 1) {
