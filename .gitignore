@@ -15,8 +15,7 @@ nagarkot.db-journal
 
 # Environment Variables
 .env
-.env.local
-.env.*.local
+.env.docker
 
 # Build Outputs
 dist/

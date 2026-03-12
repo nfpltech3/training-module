@@ -1,9 +1,8 @@
 /**
- * API Client — Axios instance with automatic JWT header injection.
+ * API Client — Axios instance configured for cookie-based auth.
  *
- * Every request reads the token from localStorage and attaches it
- * as a Bearer token. If the server returns 401, the token is cleared
- * and the user is redirected to login.
+ * The browser sends the httpOnly auth cookie automatically on
+ * cross-origin requests when `withCredentials` is enabled.
  */
 import axios from 'axios';
 
@@ -12,15 +11,7 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 const api = axios.create({
     baseURL: API_URL,
     headers: { 'Content-Type': 'application/json' },
-});
-
-// --- Request interceptor: attach JWT ---
-api.interceptors.request.use((config) => {
-    const token = localStorage.getItem('nagarkot_token');
-    if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
+    withCredentials: true,
 });
 
 // --- Response interceptor: handle 401 ---
@@ -28,10 +19,8 @@ api.interceptors.response.use(
     (response) => response,
     (error) => {
         if (error.response?.status === 401) {
-            localStorage.removeItem('nagarkot_token');
-            localStorage.removeItem('nagarkot_user');
             // Only redirect if not already on login page
-            if (window.location.pathname !== '/login') {
+            if (window.location.pathname !== '/login' && !window.location.pathname.startsWith('/sso')) {
                 window.location.href = '/login';
             }
         }
@@ -44,6 +33,7 @@ api.interceptors.response.use(
 // =====================================================================
 export const authLogin = (identifier, password) =>
     api.post('/auth/login', { identifier, password });
+export const authLogout = () => api.post('/auth/logout');
 
 // =====================================================================
 //  DEPARTMENTS & ROLES (Departments are proxied from OS)
@@ -68,6 +58,9 @@ export const getModules = (departmentSlug) => {
     const params = departmentSlug ? { department_slug: departmentSlug } : {};
     return api.get('/modules/', { params });
 };
+// Admin Portal view: returns ALL modules regardless of the admin's own department
+export const getAdminModules = () => api.get('/modules/', { params: { admin_view: true } });
+export const getModule = (id) => api.get(`/modules/${id}`);
 export const createModule = (data) => api.post('/modules/', data);
 export const updateModule = (id, data) => api.put(`/modules/${id}`, data);
 export const reorderModule = (id, direction) =>

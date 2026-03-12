@@ -1,8 +1,8 @@
 /**
  * LoginPage — Secure JWT authentication form.
  *
- * Calls POST /auth/login and stores the returned JWT + user in AuthContext.
- * Redirects to / (learner dashboard) or /admin (if admin) after login.
+ * Calls POST /auth/login, which sets an httpOnly session cookie.
+ * The frontend keeps only the user object in AuthContext.
  */
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -27,10 +27,9 @@ export default function LoginPage() {
 
         try {
             const res = await authLogin(identifier.trim(), password);
-            const { access_token, user } = res.data;
+            const { user } = res.data;
 
-            // Store in AuthContext + localStorage
-            login(access_token, user);
+            login(user);
 
             // Redirect based on role (role is an object { name: 'ADMIN' })
             if (user.role?.name === 'ADMIN') {
@@ -71,7 +70,7 @@ export default function LoginPage() {
                                 <p>{error}</p>
                                 {error.includes('portal') && (
                                     <a
-                                        href="http://192.168.1.23:3000"
+                                        href={import.meta.env.VITE_OS_PORTAL_URL || 'http://localhost:3000'}
                                         style={{ color: '#2563eb', fontSize: 13, display: 'block', marginTop: 6 }}
                                     >
                                         → Go to Nagarkot OS Portal

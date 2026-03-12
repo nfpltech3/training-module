@@ -4,6 +4,7 @@ uvicorn>=0.29,<1.0
 
 # Database
 SQLAlchemy>=2.0,<3.0
+alembic>=1.13,<2.0
 
 # Validation / Settings
 pydantic>=2.6,<3.0
@@ -12,6 +13,12 @@ email-validator>=2.1,<3.0
 
 # Auth / Security (JWT only — password verification is delegated to OS)
 python-jose[cryptography]>=3.3,<4.0
+
+# Rate limiting
+slowapi>=0.1.9,<1.0
+
+# Background scheduler (SSO token log cleanup)
+APScheduler>=3.10,<4.0
 
 # File uploads & CORS
 python-multipart>=0.0.9,<1.0

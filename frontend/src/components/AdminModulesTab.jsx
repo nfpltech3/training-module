@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import {
-    getModules, createModule, updateModule, moveModule,
+    getAdminModules, createModule, updateModule, moveModule,
     getAssignableDepartments, getClientOrganizations, getRoles, 
     createContent, updateContent, moveContent, uploadDocument
 } from '../lib/api';
@@ -69,7 +69,7 @@ export default function AdminModulesTab() {
         try {
             setLoading(true);
             const [modRes, deptRes, clientRes, rolesRes] = await Promise.all([
-                getModules(), 
+                getAdminModules(), 
                 getAssignableDepartments(), 
                 getClientOrganizations(),
                 getRoles()

@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr
-from typing import Optional, List
+from typing import Optional, List, Literal
 from datetime import datetime
 from .models import ModuleTypeEnum, ContentTypeEnum
 
@@ -29,7 +29,7 @@ class RoleResponse(BaseModel):
 class AdminUserUpdate(BaseModel):
     # Training Admins can only edit these two fields now
     role_id: Optional[str] = None
-    is_active: Optional[bool] = None
+    status: Optional[Literal["active", "disabled"]] = None
 
 
 class UserResponse(BaseModel):
@@ -42,6 +42,7 @@ class UserResponse(BaseModel):
     is_app_admin: bool
     role_id: str
     role: Optional[RoleResponse] = None
+    status: str
     is_active: bool
     created_at: datetime
 

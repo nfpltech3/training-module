@@ -12,14 +12,15 @@ from typing import Optional
 
 import httpx
 from dotenv import load_dotenv
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from jose import jwt, JWTError
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from .database import get_db
 from . import models
-from .auth import create_access_token
+from .auth import create_access_token, set_auth_cookie
+from .rate_limit import limiter
 
 # Load backend/.env regardless of where uvicorn is launched from
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", ".env"))
@@ -43,7 +44,8 @@ class SsoResponse(BaseModel):
 
 
 @router.post("/sso", response_model=SsoResponse)
-def sso_login(body: SsoRequest, db: Session = Depends(get_db)):
+@limiter.limit("10/minute")
+def sso_login(request: Request, body: SsoRequest, response: Response, db: Session = Depends(get_db)):
     """
     Called by the Trainings frontend after OS redirects with SSO token.
     Validates the token, finds or creates a local user, returns a
@@ -212,7 +214,7 @@ def sso_login(body: SsoRequest, db: Session = Depends(get_db)):
             email=email,
             full_name=name or email,
             role_id=role.id,
-            is_active=True,
+            status="active",
             os_user_id=os_user_id,
             department_slug=department_slug,
             org_id=org_id,
@@ -231,9 +233,10 @@ def sso_login(body: SsoRequest, db: Session = Depends(get_db)):
     # ── 5. Issue standard Trainings HS256 JWT ─────────────────────
     # Same format as existing login — rest of app works unchanged
     trainings_token = create_access_token(data={"sub": user.id})
+    set_auth_cookie(response, trainings_token)
 
     return SsoResponse(
-        access_token=trainings_token,
+        access_token="",
         token_type="bearer",
         user={
             "id": user.id,

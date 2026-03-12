@@ -1,8 +1,12 @@
 import { useState, useEffect } from 'react';
 import { getReportSummary, getReportUserDetail, getDepartments } from '../lib/api';
+import { useAuth } from '../lib/AuthContext';
 import { Loader2, Search, Filter, AlertCircle, PlayCircle, FileText, CheckCircle2, X } from 'lucide-react';
 
 export default function AdminReports() {
+    const { user } = useAuth();
+    const isAdminRole = user?.role?.name === 'ADMIN';
+
     const [summaryData, setSummaryData] = useState([]);
     const [filteredData, setFilteredData] = useState([]);
     const [departments, setDepartments] = useState([]);
@@ -32,7 +36,6 @@ export default function AdminReports() {
             ]);
             setSummaryData(reportsRes.data);
             setFilteredData(reportsRes.data);
-            // OS departments — no is_global filter needed anymore
             setDepartments(deptsRes.data);
         } catch (err) {
             console.error("Failed to load reports:", err);
@@ -119,7 +122,7 @@ export default function AdminReports() {
                             />
                         </div>
 
-                        {departments.length > 1 && (
+                        {isAdminRole && departments.length > 1 && (
                             <div className="flex items-center gap-2 w-full sm:w-auto">
                                 <Filter className="w-5 h-5 text-slate-400 shrink-0" />
                                 <select
@@ -166,7 +169,7 @@ export default function AdminReports() {
                                                 className="hover:bg-blue-50/50 cursor-pointer transition group"
                                             >
                                                 <td className="p-4 pl-6 font-semibold text-slate-800">{row.full_name}</td>
-                                                <td className="p-4 text-slate-600">{row.department_slug || 'N/A'}</td>
+                                                <td className="p-4 text-slate-600">{departments.find(d => d.slug === row.department_slug)?.name || row.department_slug || 'N/A'}</td>
                                                 <td className="p-4 text-center font-medium text-slate-700">{row.total_visible}</td>
                                                 <td className="p-4 text-center font-bold text-green-600">{row.completed}</td>
                                                 <td className="p-4 text-center font-bold text-amber-500">{row.pending}</td>

@@ -28,6 +28,7 @@ export default function SsoPage() {
         const res = await fetch(`${API_BASE}/auth/sso`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
           body: JSON.stringify({ token }),
         });
 
@@ -37,7 +38,7 @@ export default function SsoPage() {
         }
 
         const data = await res.json();
-        login(data.access_token, data.user);
+        login(data.user);
         window.history.replaceState({}, '', '/');
         navigate('/', { replace: true });
 
@@ -62,7 +63,7 @@ export default function SsoPage() {
         fontFamily: 'sans-serif',
       }}>
         <p style={{ color: '#f87171', marginBottom: 16 }}>{error}</p>
-        <a href="http://192.168.1.23:3000/dashboard" style={{ color: '#60a5fa', fontSize: 14 }}>
+        <a href={`${import.meta.env.VITE_OS_PORTAL_URL || 'http://localhost:3000'}/dashboard`} style={{ color: '#60a5fa', fontSize: 14 }}>
           ← Return to OS Portal
         </a>
       </div>

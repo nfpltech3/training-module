@@ -1,52 +1,70 @@
 /**
- * Auth Context — provides JWT token management, login/logout, and user state.
- * * Token is stored in localStorage for persistence across page refreshes.
- * The user object is cached alongside the token to avoid extra API calls.
+ * Auth Context — manages the authenticated user for cookie-backed sessions.
+ *
+ * The JWT lives only in an httpOnly cookie. On app mount, the frontend
+ * rehydrates auth state by asking the backend for the current user.
  */
-import { createContext, useContext, useState, useCallback, useMemo } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { authLogout, getMe } from './api';
 
 const AuthContext = createContext(null);
 
-const TOKEN_KEY = 'nagarkot_token';
-const USER_KEY = 'nagarkot_user';
-
-function getStoredAuth() {
-    try {
-        const token = localStorage.getItem(TOKEN_KEY);
-        const user = JSON.parse(localStorage.getItem(USER_KEY));
-        if (token && user) return { token, user };
-    } catch {
-        // Corrupted storage — clear it
-        localStorage.removeItem(TOKEN_KEY);
-        localStorage.removeItem(USER_KEY);
-    }
-    return { token: null, user: null };
-}
-
 export function AuthProvider({ children }) {
-    const [auth, setAuth] = useState(getStoredAuth);
+    const [auth, setAuth] = useState({
+        user: null,
+        isLoading: true,
+    });
 
-    const login = useCallback((token, user) => {
-        localStorage.setItem(TOKEN_KEY, token);
-        localStorage.setItem(USER_KEY, JSON.stringify(user));
-        setAuth({ token, user });
+    useEffect(() => {
+        let isMounted = true;
+
+        const hydrateAuth = async () => {
+            if (window.location.pathname.startsWith('/sso')) {
+                if (isMounted) setAuth({ user: null, isLoading: false });
+                return;
+            }
+
+            try {
+                const res = await getMe();
+                if (isMounted) {
+                    setAuth({ user: res.data, isLoading: false });
+                }
+            } catch {
+                if (isMounted) {
+                    setAuth({ user: null, isLoading: false });
+                }
+            }
+        };
+
+        hydrateAuth();
+
+        return () => {
+            isMounted = false;
+        };
     }, []);
 
-    const logout = useCallback(() => {
-        localStorage.removeItem(TOKEN_KEY);
-        localStorage.removeItem(USER_KEY);
-        setAuth({ token: null, user: null });
+    const login = useCallback((user) => {
+        setAuth({ user, isLoading: false });
+    }, []);
+
+    const logout = useCallback(async () => {
+        try {
+            await authLogout();
+        } catch {
+            // Local auth state should still be cleared even if the backend call fails.
+        } finally {
+            setAuth({ user: null, isLoading: false });
+        }
     }, []);
 
     const updateUser = useCallback((updatedUser) => {
-        localStorage.setItem(USER_KEY, JSON.stringify(updatedUser));
-        setAuth(prev => ({ ...prev, user: updatedUser }));
+        setAuth((prev) => ({ ...prev, user: updatedUser }));
     }, []);
 
     const value = useMemo(() => ({
-        token: auth.token,
         user: auth.user,
-        isAuthenticated: !!auth.token,
+        isLoading: auth.isLoading,
+        isAuthenticated: !!auth.user,
         isAdmin: auth.user?.role?.name === 'ADMIN',
         isManager: auth.user?.role?.name === 'ADMIN' || auth.user?.role?.name === 'TEAM LEAD',
         isAppAdmin: !!auth.user?.is_app_admin,

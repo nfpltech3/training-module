@@ -2,15 +2,15 @@
 JWT Authentication utilities for the Training App (Spoke).
 
 Password verification is delegated entirely to the Nagarkot OS (Hub).
-This module only handles local HS256 session tokens.
+This module handles local HS256 session tokens and exposes shared helpers
+for issuing them via httpOnly cookies.
 """
 
 import os
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi import Cookie, Depends, Header, HTTPException, Response, status
 from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 
@@ -21,26 +21,57 @@ from . import models
 SECRET_KEY = os.getenv("SECRET_KEY", "nagarkot-dev-secret-change-in-production")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_HOURS = 24
+COOKIE_NAME = "nagarkot_token"
+COOKIE_MAX_AGE_SECONDS = ACCESS_TOKEN_EXPIRE_HOURS * 60 * 60
+COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").lower() in {"1", "true", "yes", "on"}
+COOKIE_SAMESITE = os.getenv("COOKIE_SAMESITE", "lax")
+COOKIE_PATH = "/"
 
 # --- JWT Token ---
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=False)
-
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     to_encode = data.copy()
     expire = datetime.utcnow() + (expires_delta or timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS))
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
+
+def set_auth_cookie(response: Response, token: str) -> None:
+    response.set_cookie(
+        key=COOKIE_NAME,
+        value=token,
+        httponly=True,
+        secure=COOKIE_SECURE,
+        samesite=COOKIE_SAMESITE,
+        max_age=COOKIE_MAX_AGE_SECONDS,
+        path=COOKIE_PATH,
+    )
+
+
+def clear_auth_cookie(response: Response) -> None:
+    response.delete_cookie(
+        key=COOKIE_NAME,
+        path=COOKIE_PATH,
+        secure=COOKIE_SECURE,
+        samesite=COOKIE_SAMESITE,
+    )
+
 # --- FastAPI Dependency: Extract current user from JWT ---
 def get_current_user(
-    token: Optional[str] = Depends(oauth2_scheme),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    nagarkot_token: Optional[str] = Cookie(default=None),
+    authorization: Optional[str] = Header(default=None),
 ) -> models.User:
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
+
+    token = nagarkot_token
+    if not token and authorization:
+        scheme, _, param = authorization.partition(" ")
+        if scheme.lower() == "bearer":
+            token = param
 
     if token is None:
         raise credentials_exception

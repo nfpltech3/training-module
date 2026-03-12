@@ -1,21 +1,26 @@
 import os
 import shutil
 import httpx
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Optional
 
-from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Header, status
+from fastapi import FastAPI, Depends, HTTPException, Request, Response, UploadFile, File, Header, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 from pydantic import BaseModel
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from apscheduler.schedulers.background import BackgroundScheduler
 
 from . import models, schemas
 from .database import engine, get_db, SessionLocal
 from .auth import (
-    create_access_token, get_current_user, require_admin, require_manager,
+    clear_auth_cookie, create_access_token, get_current_user, require_admin, require_manager,
+    set_auth_cookie,
 )
+from .rate_limit import limiter
 from .sso import router as sso_router
 
 # ── OS backend connection (for login proxy + webhooks) ──────────────
@@ -23,7 +28,9 @@ OS_BACKEND_URL = os.getenv("OS_BACKEND_URL", "http://localhost:3001")
 INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY", "")
 
 # --- Create Database tables ---
-models.Base.metadata.create_all(bind=engine)
+# Schema is managed by Alembic migrations. Run: alembic upgrade head
+# Do NOT uncomment create_all here — use migrations instead.
+# models.Base.metadata.create_all(bind=engine)
 
 # --- Ensure uploads directory exists ---
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads")
@@ -35,30 +42,12 @@ app = FastAPI(
     version="2.0.0",
 )
 
-# --- Serve uploaded documents as static files ---
-app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
-
-
-# --- Startup: Seed data ---
-@app.on_event("startup")
-def startup_event():
-    db = SessionLocal()
-    try:
-        # 1. Seed Roles
-        default_roles = ["ADMIN", "MANAGER", "TEAM LEAD", "EMPLOYEE", "CLIENT"]
-        for role_name in default_roles:
-            if not db.query(models.Role).filter(func.lower(models.Role.name) == role_name.lower()).first():
-                db.add(models.Role(name=role_name))
-        db.commit()
-
-        # 2. Skip Admin Seed — Handled by OS JIT Provisioning
-    finally:
-        db.close()
-
-# --- CORS ---
+# --- CORS — must be registered before any mounts or route handlers ---
+# Middleware is applied in reverse registration order in Starlette.
+# Adding it early ensures preflight OPTIONS requests are handled correctly.
 ALLOWED_ORIGINS = os.getenv(
     "ALLOWED_ORIGINS",
-    "http://localhost:5173,http://localhost:5174,http://localhost:3000,http://192.168.1.23:5173,http://192.168.1.23:5174,http://192.168.1.23:3000"
+    "http://localhost:5173,http://localhost:5174,http://localhost:3000,http://localhost:8000"
 ).split(",")
 
 app.add_middleware(
@@ -69,17 +58,110 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# --- Rate limiter (slowapi) ---
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# --- Serve uploaded documents as static files ---
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+
+
+# ── Scheduled cleanup: purge consumed SSO tokens older than 24 h ────
+def cleanup_old_sso_tokens():
+    """Delete sso_token_log rows older than 24 hours.
+
+    SSO tokens expire in 60 s, so any row older than 24 h is provably
+    expired and unreplayable.  Running hourly keeps the table small and
+    the replay-check query fast.
+    """
+    db = SessionLocal()
+    try:
+        cutoff = datetime.utcnow() - timedelta(hours=24)
+        deleted = (
+            db.query(models.SsoTokenLog)
+            .filter(models.SsoTokenLog.consumed_at < cutoff)
+            .delete(synchronize_session=False)
+        )
+        db.commit()
+        if deleted:
+            print(f"[SSO cleanup] Purged {deleted} expired token-log rows (older than {cutoff.isoformat()})")
+    except Exception as exc:
+        db.rollback()
+        print(f"[SSO cleanup] ERROR during purge: {exc}")
+    finally:
+        db.close()
+
+
+scheduler = BackgroundScheduler()
+scheduler.add_job(cleanup_old_sso_tokens, "interval", hours=1, id="sso_token_log_cleanup")
+
+
+# --- Startup: Seed data + start background scheduler ---
+@app.on_event("startup")
+def startup_event():
+    # ── Start background scheduler ──
+    scheduler.start()
+    print("[Scheduler] Started — SSO token-log cleanup runs every 1 h")
+
+    db = SessionLocal()
+    try:
+        # 1. Seed Roles
+        default_roles = ["ADMIN", "MANAGER", "TEAM LEAD", "EMPLOYEE", "CLIENT"]
+        for role_name in default_roles:
+            if not db.query(models.Role).filter(func.lower(models.Role.name) == role_name.lower()).first():
+                db.add(models.Role(name=role_name))
+        db.commit()
+
+        # 2. Seed local departments from OS (if table is empty)
+        if db.query(models.Department).count() == 0:
+            try:
+                res = httpx.get(
+                    f"{OS_BACKEND_URL}/users/internal/departments",
+                    headers={"x-internal-key": INTERNAL_API_KEY},
+                    timeout=10.0,
+                )
+                if res.status_code == 200:
+                    for d in res.json():
+                        db.add(models.Department(
+                            os_department_id=d['id'],
+                            slug=d['slug'],
+                            name=d['name'],
+                            status='active',
+                        ))
+                    db.commit()
+            except httpx.RequestError as exc:
+                print(f"WARNING: Could not seed departments from OS: {exc}")
+
+        # 3. Skip Admin Seed — Handled by OS JIT Provisioning
+    finally:
+        db.close()
+
+
+@app.on_event("shutdown")
+def shutdown_event():
+    scheduler.shutdown(wait=False)
+    print("[Scheduler] Stopped")
+
+# CORS is registered above (near app creation) — removed duplicate here
+
 
 @app.get("/")
 def read_root():
     return {"status": "ok", "message": "Nagarkot Knowledge Platform API v2 is running"}
 
 
-# ── OS webhook — user lifecycle events ───────────────────────────────
+# ── OS webhook — user & department lifecycle events ───────────────────────────────
 class OsWebhookPayload(BaseModel):
-    event: str           # 'user.deleted' | 'user.deactivated' | 'user.reactivated'
-    os_user_id: str
-    email: str
+    event: str
+    # User event fields (absent on department events)
+    os_user_id: Optional[str] = None
+    email: Optional[str] = None
+    # Department event fields (absent on user events)
+    department_id: Optional[str] = None
+    department_slug: Optional[str] = None
+    department_name: Optional[str] = None
+    new_slug: Optional[str] = None
+    new_name: Optional[str] = None
     timestamp: str
 
 @app.post("/webhooks/os", status_code=200)
@@ -91,6 +173,51 @@ def os_webhook(
     if not INTERNAL_API_KEY or x_internal_key != INTERNAL_API_KEY:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
+    # ── Department events ────────────────────────────────────────────
+    if payload.event == "department.created":
+        if payload.department_id and payload.department_slug and payload.department_name:
+            exists = db.query(models.Department).filter(
+                models.Department.os_department_id == payload.department_id
+            ).first()
+            if not exists:
+                db.add(models.Department(
+                    os_department_id=payload.department_id,
+                    slug=payload.department_slug,
+                    name=payload.department_name,
+                    status='active',
+                ))
+                db.commit()
+        return {"status": "ok", "action": "department_created"}
+
+    if payload.event == "department.updated":
+        if payload.department_id:
+            dept = db.query(models.Department).filter(
+                models.Department.os_department_id == payload.department_id
+            ).first()
+            if dept:
+                old_slug = dept.slug
+                dept.slug = payload.new_slug or payload.department_slug or dept.slug
+                dept.name = payload.new_name or payload.department_name or dept.name
+                db.commit()
+                # Propagate slug rename to cached user records
+                if old_slug != dept.slug:
+                    db.query(models.User).filter(
+                        models.User.department_slug == old_slug
+                    ).update({"department_slug": dept.slug})
+                    db.commit()
+        return {"status": "ok", "action": "department_updated"}
+
+    if payload.event == "department.deleted":
+        if payload.department_id:
+            dept = db.query(models.Department).filter(
+                models.Department.os_department_id == payload.department_id
+            ).first()
+            if dept:
+                dept.status = 'deleted'
+                db.commit()
+        return {"status": "ok", "action": "department_soft_deleted"}
+
+    # ── User events ──────────────────────────────────────────────────
     user = db.query(models.User).filter(
         models.User.os_user_id == payload.os_user_id
     ).first()
@@ -99,21 +226,21 @@ def os_webhook(
         return {"status": "ignored", "reason": "user_not_found"}
 
     if payload.event == "user.deleted":
-        db.delete(user)
+        user.status = "deleted"
         db.commit()
-        print(f"[OS webhook] {payload.event}: hard-deleted user {payload.os_user_id} ({payload.email})")
-        return {"status": "ok", "action": "hard_deleted"}
+        print(f"[OS webhook] {payload.event}: soft-deleted user {payload.os_user_id} ({payload.email})")
+        return {"status": "ok", "action": "soft_deleted"}
 
     if payload.event == "user.deactivated":
-        user.is_active = False
+        user.status = "disabled"
         db.commit()
-        print(f"[OS webhook] {payload.event}: deactivated user {payload.os_user_id} ({payload.email})")
+        print(f"[OS webhook] {payload.event}: disabled user {payload.os_user_id} ({payload.email})")
         return {"status": "ok", "action": "deactivated"}
 
     if payload.event == "user.reactivated":
-        user.is_active = True
+        user.status = "active"
         db.commit()
-        print(f"[OS webhook] {payload.event}: reactivated user {payload.os_user_id} ({payload.email})")
+        print(f"[OS webhook] {payload.event}: activated user {payload.os_user_id} ({payload.email})")
         return {"status": "ok", "action": "reactivated"}
 
     return {"status": "ignored", "reason": "unknown_event"}
@@ -126,8 +253,14 @@ app.include_router(sso_router, prefix="/auth", tags=["SSO"])
 # =====================================================================
 #  AUTH & USERS
 # =====================================================================
-@app.post("/auth/login")
-def login(payload: schemas.LoginRequest, db: Session = Depends(get_db)):
+@app.post("/auth/login", response_model=schemas.TokenResponse)
+@limiter.limit("5/minute")
+def login(
+    request: Request,
+    payload: schemas.LoginRequest,
+    response: Response,
+    db: Session = Depends(get_db),
+):
     """Direct logins forward credentials to the OS verify-password internal API."""
     try:
         os_res = httpx.post(
@@ -199,65 +332,114 @@ def login(payload: schemas.LoginRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=403, detail="Account deactivated by OS")
 
     token = create_access_token(data={"sub": user.id})
+    set_auth_cookie(response, token)
+
+    # Re-query with role joined so all UserResponse fields are present
+    user = db.query(models.User).options(
+        joinedload(models.User.role)
+    ).filter(models.User.id == user.id).first()
+
     return {
-        "access_token": token,
+        "access_token": "",
         "token_type": "bearer",
         "user": {
             "id": user.id,
+            "os_user_id": user.os_user_id,
             "email": user.email,
             "full_name": user.full_name,
-            "role": {"name": user.role.name},
+            "role_id": user.role_id,
+            "role": {"id": user.role.id, "name": user.role.name},
+            "is_app_admin": user.is_app_admin,
             "department_slug": user.department_slug,
-            "org_id": user.org_id
+            "org_id": user.org_id,
+            "status": user.status,
+            "is_active": user.is_active,
+            "created_at": user.created_at,
         }
     }
+
+
+@app.post("/auth/logout")
+def logout(response: Response):
+    clear_auth_cookie(response)
+    return {"logged_out": True}
 
 
 # =====================================================================
 #  DEPARTMENTS
 # =====================================================================
 @app.get("/departments/")
-def get_departments(current_user: models.User = Depends(get_current_user)):
-    """Fetch live departments directly from the OS for the Admin UI Builder."""
-    try:
-        res = httpx.get(
-            f"{OS_BACKEND_URL}/users/internal/departments",
-            headers={"x-internal-key": INTERNAL_API_KEY},
-            timeout=5.0
-        )
-        if res.status_code == 200:
-            return res.json()
-        return []
-    except httpx.RequestError:
-        return []
+def get_departments(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Return active departments from the local cache (kept in sync via webhooks)."""
+    depts = db.query(models.Department).filter(
+        models.Department.status == 'active'
+    ).order_by(models.Department.name).all()
+    return [{"id": d.os_department_id, "slug": d.slug, "name": d.name} for d in depts]
 
 
 @app.get("/departments/assignable")
-def get_assignable_departments(current_user: models.User = Depends(require_manager)):
+def get_assignable_departments(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_manager),
+):
     # FIX: Uses require_manager so Team Leads can reach this endpoint.
     # Role-based scoping is then applied below.
     role_name = current_user.role.name.upper() if current_user.role else "EMPLOYEE"
 
+    depts = db.query(models.Department).filter(
+        models.Department.status == 'active'
+    ).order_by(models.Department.name).all()
+    all_depts = [{"id": d.os_department_id, "slug": d.slug, "name": d.name} for d in depts]
+
+    # Team Leads can only assign to their own department or General (no dept).
+    # App Admins (ADMIN role) can assign to any department.
+    if role_name == "TEAM LEAD" and current_user.department_slug:
+        return [d for d in all_depts if d["slug"] == current_user.department_slug]
+
+    return all_depts
+
+
+@app.post("/departments/sync")
+def sync_departments(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_admin),
+):
+    """Admin-only: force re-sync all departments from OS (fixes stale names/slugs)."""
     try:
         res = httpx.get(
             f"{OS_BACKEND_URL}/users/internal/departments",
             headers={"x-internal-key": INTERNAL_API_KEY},
-            timeout=5.0
+            timeout=10.0,
         )
         if res.status_code != 200:
-            return []
-
-        all_depts = res.json()
-
-        # Team Leads can only assign to their own department or General (no dept).
-        # App Admins (ADMIN role) can assign to any department.
-        if role_name == "TEAM LEAD" and current_user.department_slug:
-            return [d for d in all_depts if d["slug"] == current_user.department_slug]
-
-        return all_depts
-
+            raise HTTPException(status_code=502, detail="OS returned an error during department sync")
+        os_depts = res.json()
     except httpx.RequestError:
-        return []
+        raise HTTPException(status_code=503, detail="OS identity server unreachable")
+
+    synced, created = 0, 0
+    for d in os_depts:
+        dept = db.query(models.Department).filter(
+            models.Department.os_department_id == d['id']
+        ).first()
+        if dept:
+            dept.slug = d['slug']
+            dept.name = d['name']
+            dept.status = 'active'
+            synced += 1
+        else:
+            db.add(models.Department(
+                os_department_id=d['id'],
+                slug=d['slug'],
+                name=d['name'],
+                status='active',
+            ))
+            created += 1
+    db.commit()
+    return {"synced": synced, "created": created, "total": len(os_depts)}
 
 
 # =====================================================================
@@ -308,7 +490,7 @@ def admin_update_user(
     db: Session = Depends(get_db),
     admin: models.User = Depends(require_admin)  # Strict ADMIN only
 ):
-    """Training admins can ONLY update training roles and active status here."""
+    """Training admins can only update training roles and active/disabled status."""
     db_user = db.query(models.User).filter(models.User.id == user_id).first()
     if not db_user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -331,17 +513,17 @@ def admin_update_user(
     db.commit()
     db.refresh(db_user)
 
-    if 'is_active' in update_data and not update_data['is_active']:
+    if "status" in update_data:
         if db_user.os_user_id:
             try:
                 httpx.patch(
                     f"{OS_BACKEND_URL}/users/{db_user.os_user_id}",
-                    json={"is_active": False},
+                    json={"is_active": update_data["status"] == "active"},
                     headers={"x-internal-key": INTERNAL_API_KEY},
                     timeout=5.0,
                 )
             except httpx.RequestError:
-                print(f"WARNING: Could not deactivate user {db_user.os_user_id} in OS")
+                print(f"WARNING: Could not sync user status for {db_user.os_user_id} in OS")
 
     return db_user
 
@@ -352,11 +534,12 @@ def admin_update_user(
 @app.get("/modules/", response_model=List[schemas.ModuleResponse])
 def get_modules(
     department_slug: Optional[str] = None,
+    admin_view: bool = False,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
     query = db.query(models.Module).options(
-        joinedload(models.Module.department_slugs),
+        joinedload(models.Module.departments).joinedload(models.ModuleDepartment.department),
         joinedload(models.Module.roles),
         joinedload(models.Module.content_items),
     ).filter(models.Module.is_active == True)
@@ -364,19 +547,30 @@ def get_modules(
     user_role_name = current_user.role.name.upper()
 
     if user_role_name == "ADMIN":
-        # Super Admin (no dept) sees everything.
-        # App Admin (has dept) sees their dept + General modules.
-        if current_user.department_slug:
+        # admin_view=True: Admin Portal management view — return ALL modules regardless of dept.
+        # admin_view=False (default): Learner/dashboard view — filter by dept as before.
+        if admin_view:
+            pass  # No dept filter — ADMIN sees every module in admin portal
+        elif current_user.department_slug:
+            # App Admin on learner view: their dept + General modules only.
             query = query.filter(
-                ~models.Module.department_slugs.any() |
-                models.Module.department_slugs.any(
-                    models.ModuleDepartmentSlug.department_slug == current_user.department_slug
+                ~models.Module.departments.any(
+                    models.ModuleDepartment.department.has(models.Department.status == 'active')
+                ) |
+                models.Module.departments.any(
+                    models.ModuleDepartment.department.has(
+                        (models.Department.slug == current_user.department_slug) &
+                        (models.Department.status == 'active')
+                    )
                 )
             )
         elif department_slug:
             query = query.filter(
-                models.Module.department_slugs.any(
-                    models.ModuleDepartmentSlug.department_slug == department_slug
+                models.Module.departments.any(
+                    models.ModuleDepartment.department.has(
+                        (models.Department.slug == department_slug) &
+                        (models.Department.status == 'active')
+                    )
                 )
             )
 
@@ -385,9 +579,14 @@ def get_modules(
         query = query.filter(
             models.Module.roles.any(models.Role.name.in_(["EMPLOYEE", "MANAGER"])),
             (
-                ~models.Module.department_slugs.any() |
-                models.Module.department_slugs.any(
-                    models.ModuleDepartmentSlug.department_slug == current_user.department_slug
+                ~models.Module.departments.any(
+                    models.ModuleDepartment.department.has(models.Department.status == 'active')
+                ) |
+                models.Module.departments.any(
+                    models.ModuleDepartment.department.has(
+                        (models.Department.slug == current_user.department_slug) &
+                        (models.Department.status == 'active')
+                    )
                 )
             )
         )
@@ -407,9 +606,14 @@ def get_modules(
         query = query.filter(
             models.Module.roles.any(models.Role.name.ilike("EMPLOYEE")),
             (
-                ~models.Module.department_slugs.any() |
-                models.Module.department_slugs.any(
-                    models.ModuleDepartmentSlug.department_slug == current_user.department_slug
+                ~models.Module.departments.any(
+                    models.ModuleDepartment.department.has(models.Department.status == 'active')
+                ) |
+                models.Module.departments.any(
+                    models.ModuleDepartment.department.has(
+                        (models.Department.slug == current_user.department_slug) &
+                        (models.Department.status == 'active')
+                    )
                 )
             )
         )
@@ -419,7 +623,7 @@ def get_modules(
     return [
         {
             **m.__dict__,
-            "department_slugs": [d.department_slug for d in m.department_slugs],
+            "department_slugs": [d.department.slug for d in m.departments if d.department],
             "org_ids": [c.org_id for c in m.client_orgs],
             "roles": m.roles,
             "content_items": m.content_items,
@@ -428,6 +632,33 @@ def get_modules(
         }
         for m in modules
     ]
+
+
+@app.get("/modules/{module_id}", response_model=schemas.ModuleResponse)
+def get_module(
+    module_id: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Fetch a single module by ID. Applies the same access rules as the list endpoint."""
+    m = db.query(models.Module).options(
+        joinedload(models.Module.departments).joinedload(models.ModuleDepartment.department),
+        joinedload(models.Module.roles),
+        joinedload(models.Module.content_items),
+    ).filter(models.Module.id == module_id, models.Module.is_active == True).first()
+
+    if not m:
+        raise HTTPException(status_code=404, detail="Module not found")
+
+    return {
+        **m.__dict__,
+        "department_slugs": [d.department.slug for d in m.departments if d.department],
+        "org_ids": [c.org_id for c in m.client_orgs],
+        "roles": m.roles,
+        "content_items": m.content_items,
+        "is_active": m.is_active,
+        "created_at": m.created_at
+    }
 
 
 @app.post("/modules/", response_model=schemas.ModuleResponse)
@@ -458,7 +689,13 @@ def create_module(
                 detail=f"Team Leads can only assign modules to their own department ({admin.department_slug}) or General."
             )
 
-    db_module.department_slugs = [models.ModuleDepartmentSlug(department_slug=slug) for slug in module.department_slugs]
+    db_module.departments = [
+        models.ModuleDepartment(department_id=d.id)
+        for d in db.query(models.Department).filter(
+            models.Department.slug.in_(module.department_slugs),
+            models.Department.status == 'active',
+        ).all()
+    ]
     db_module.client_orgs = [models.ModuleClientOrg(org_id=oid) for oid in module.org_ids]
     db_module.roles = roles
 
@@ -468,7 +705,7 @@ def create_module(
 
     return {
         **db_module.__dict__,
-        "department_slugs": [d.department_slug for d in db_module.department_slugs],
+        "department_slugs": [d.department.slug for d in db_module.departments if d.department],
         "org_ids": [c.org_id for c in db_module.client_orgs],
         "roles": db_module.roles,
         "content_items": db_module.content_items
@@ -500,10 +737,16 @@ def update_module(
                     detail=f"Team Leads can only assign modules to their own department ({admin.department_slug}) or General."
                 )
 
-        db.query(models.ModuleDepartmentSlug).filter(
-            models.ModuleDepartmentSlug.module_id == module_id
+        db.query(models.ModuleDepartment).filter(
+            models.ModuleDepartment.module_id == module_id
         ).delete()
-        db_module.department_slugs = [models.ModuleDepartmentSlug(department_slug=slug) for slug in slugs]
+        db_module.departments = [
+            models.ModuleDepartment(department_id=d.id)
+            for d in db.query(models.Department).filter(
+                models.Department.slug.in_(slugs),
+                models.Department.status == 'active',
+            ).all()
+        ]
 
     if "org_ids" in update_data:
         org_ids = update_data.pop("org_ids")
@@ -524,7 +767,7 @@ def update_module(
 
     return {
         **db_module.__dict__,
-        "department_slugs": [d.department_slug for d in db_module.department_slugs],
+        "department_slugs": [d.department.slug for d in db_module.departments if d.department],
         "org_ids": [c.org_id for c in db_module.client_orgs],
         "roles": db_module.roles,
         "content_items": db_module.content_items
@@ -758,7 +1001,7 @@ def admin_report_summary(
     admin_role_name = admin.role.name.upper() if admin.role else "EMPLOYEE"
 
     users_query = db.query(models.User).filter(
-        models.User.is_active == True,
+        models.User.status == "active",
         models.User.role.has(models.Role.name.in_(["EMPLOYEE", "ADMIN", "TEAM LEAD"]))
     )
 
@@ -785,9 +1028,14 @@ def admin_report_summary(
             visible_content_count = db.query(func.count(models.Content.id)).join(models.Module).filter(
                 models.Module.roles.any(models.Role.name.in_(["EMPLOYEE", "MANAGER"])),
                 (
-                    ~models.Module.department_slugs.any() |
-                    models.Module.department_slugs.any(
-                        models.ModuleDepartmentSlug.department_slug == user.department_slug
+                    ~models.Module.departments.any(
+                        models.ModuleDepartment.department.has(models.Department.status == 'active')
+                    ) |
+                    models.Module.departments.any(
+                        models.ModuleDepartment.department.has(
+                            (models.Department.slug == user.department_slug) &
+                            (models.Department.status == 'active')
+                        )
                     )
                 ),
                 models.Module.is_active == True,
@@ -797,9 +1045,14 @@ def admin_report_summary(
             visible_content_count = db.query(func.count(models.Content.id)).join(models.Module).filter(
                 models.Module.roles.any(models.Role.name.ilike("EMPLOYEE")),
                 (
-                    ~models.Module.department_slugs.any() |
-                    models.Module.department_slugs.any(
-                        models.ModuleDepartmentSlug.department_slug == user.department_slug
+                    ~models.Module.departments.any(
+                        models.ModuleDepartment.department.has(models.Department.status == 'active')
+                    ) |
+                    models.Module.departments.any(
+                        models.ModuleDepartment.department.has(
+                            (models.Department.slug == user.department_slug) &
+                            (models.Department.status == 'active')
+                        )
                     )
                 ),
                 models.Module.is_active == True,
@@ -848,9 +1101,14 @@ def admin_report_user_detail(
         visible_content = db.query(models.Content, models.Module).join(models.Module).filter(
             models.Module.roles.any(models.Role.name.in_(["EMPLOYEE", "MANAGER"])),
             (
-                ~models.Module.department_slugs.any() |
-                models.Module.department_slugs.any(
-                    models.ModuleDepartmentSlug.department_slug == user.department_slug
+                ~models.Module.departments.any(
+                    models.ModuleDepartment.department.has(models.Department.status == 'active')
+                ) |
+                models.Module.departments.any(
+                    models.ModuleDepartment.department.has(
+                        (models.Department.slug == user.department_slug) &
+                        (models.Department.status == 'active')
+                    )
                 )
             ),
             models.Module.is_active == True,
@@ -860,9 +1118,14 @@ def admin_report_user_detail(
         visible_content = db.query(models.Content, models.Module).join(models.Module).filter(
             models.Module.roles.any(models.Role.name.ilike("EMPLOYEE")),
             (
-                ~models.Module.department_slugs.any() |
-                models.Module.department_slugs.any(
-                    models.ModuleDepartmentSlug.department_slug == user.department_slug
+                ~models.Module.departments.any(
+                    models.ModuleDepartment.department.has(models.Department.status == 'active')
+                ) |
+                models.Module.departments.any(
+                    models.ModuleDepartment.department.has(
+                        (models.Department.slug == user.department_slug) &
+                        (models.Department.status == 'active')
+                    )
                 )
             ),
             models.Module.is_active == True,

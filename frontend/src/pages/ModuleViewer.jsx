@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { getModules, getMyProgress, updateProgress } from '../lib/api';
+import { getModule, getMyProgress, updateProgress } from '../lib/api';
 import SecureVideoPlayer from '../components/SecureVideoPlayer';
 import SecureDocumentViewer from '../components/SecureDocumentViewer';
 import { ChevronLeft, CheckCircle2, Circle, PlayCircle, FileText, Loader2, AlertCircle } from 'lucide-react';
@@ -21,11 +21,11 @@ export default function ModuleViewer() {
             try {
                 setLoading(true);
                 const [modRes, progRes] = await Promise.all([
-                    getModules(),
+                    getModule(moduleId),
                     getMyProgress()
                 ]);
 
-                const targetModule = modRes.data.find(m => m.id === moduleId);
+                const targetModule = modRes.data;
                 if (!targetModule) {
                     setError("Module not found or you don't have access.");
                     return;

@@ -34,7 +34,7 @@ export default function AdminEmployeesTab() {
         setEditingId(user.id);
         setEditForm({
             role_id: user.role_id,
-            is_active: user.is_active,
+            status: user.status ?? 'active',
         });
     };
 
@@ -67,7 +67,7 @@ export default function AdminEmployeesTab() {
                         </p>
                     </div>
                 </div>
-                <a href="http://192.168.1.23:3000/admin" target="_blank" rel="noreferrer" className="flex items-center gap-2 px-4 py-2 bg-white border border-blue-200 text-blue-700 font-bold rounded-xl hover:bg-blue-50 transition shadow-sm whitespace-nowrap">
+                <a href={`${import.meta.env.VITE_OS_PORTAL_URL || 'http://localhost:3000'}/admin`} target="_blank" rel="noreferrer" className="flex items-center gap-2 px-4 py-2 bg-white border border-blue-200 text-blue-700 font-bold rounded-xl hover:bg-blue-50 transition shadow-sm whitespace-nowrap">
                     Go to OS Portal <ExternalLink className="w-4 h-4" />
                 </a>
             </div>
@@ -112,10 +112,14 @@ export default function AdminEmployeesTab() {
                                             </select>
                                         </td>
                                         <td className="p-3 text-center">
-                                            <label className="flex items-center justify-center gap-2 cursor-pointer">
-                                                <input type="checkbox" checked={editForm.is_active} onChange={e => setEditForm({ ...editForm, is_active: e.target.checked })} />
-                                                <span className="text-xs text-slate-600">Active</span>
-                                            </label>
+                                            <select
+                                                value={editForm.status}
+                                                onChange={e => setEditForm({ ...editForm, status: e.target.value })}
+                                                className="px-3 py-1.5 border border-slate-300 rounded-lg outline-none focus:border-blue-500 bg-white text-xs"
+                                            >
+                                                <option value="active">Active</option>
+                                                <option value="disabled">Disabled</option>
+                                            </select>
                                         </td>
                                         <td className="p-3 pr-6 text-right whitespace-nowrap">
                                             <button onClick={() => setEditingId(null)} className="text-xs text-slate-500 mr-3">Cancel</button>
@@ -144,10 +148,19 @@ export default function AdminEmployeesTab() {
                                         </span>
                                     </td>
                                     <td className="p-4 text-center">
-                                        {user.is_active ?
-                                            <span className="w-2.5 h-2.5 rounded-full bg-green-500 inline-block"></span> :
-                                            <span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block"></span>
-                                        }
+                                        {(() => {
+                                            const status = user.status ?? (user.is_active ? 'active' : 'disabled');
+                                            const color =
+                                                status === 'active' ? 'bg-green-500' :
+                                                status === 'disabled' ? 'bg-amber-500' :
+                                                'bg-red-500';
+                                            return (
+                                                <span className={`inline-flex items-center gap-2 text-xs font-semibold capitalize text-slate-700`}>
+                                                    <span className={`w-2.5 h-2.5 rounded-full inline-block ${color}`}></span>
+                                                    {status}
+                                                </span>
+                                            );
+                                        })()}
                                     </td>
                                     <td className="p-4 pr-6 text-right">
                                         <button onClick={() => startEdit(user)} className="text-sm font-semibold flex items-center gap-1 ml-auto text-blue-600 hover:text-blue-800">
