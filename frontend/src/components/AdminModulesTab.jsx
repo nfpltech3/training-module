@@ -130,7 +130,7 @@ export default function AdminModulesTab() {
                 role_ids: [] 
             });
             setShowModuleModal(false);
-            const modRes = await getModules();
+            const modRes = await getAdminModules();
             setModules(modRes.data);
             setSelectedModuleId(res.data.id);
         } catch (err) {
@@ -157,7 +157,7 @@ export default function AdminModulesTab() {
 
             await updateModule(id, payload);
             setShowEditModuleModal(false);
-            const modRes = await getModules();
+            const modRes = await getAdminModules();
             setModules(modRes.data);
         } catch (err) {
             alert(err?.response?.data?.detail || "Failed to update module.");
@@ -190,12 +190,12 @@ export default function AdminModulesTab() {
         try {
             await moveContent(draggableId, destination.index + 1);
             // Refresh in background to ensure sync
-            const modRes = await getModules();
+            const modRes = await getAdminModules();
             setModules(modRes.data);
         } catch (err) {
             console.error("Drag and drop failed:", err);
             alert("Failed to reorder items. Refreshing list...");
-            const modRes = await getModules();
+            const modRes = await getAdminModules();
             setModules(modRes.data);
         }
     };
@@ -214,7 +214,7 @@ export default function AdminModulesTab() {
             await createContent({ ...contentForm, module_id: selectedModuleId, document_url: documentUrl });
             setContentForm({ title: '', description: '', content_type: 'VIDEO', embed_url: '' });
             setUploadFile(null);
-            const modRes = await getModules();
+            const modRes = await getAdminModules();
             setModules(modRes.data);
         } catch (err) {
             alert("Failed to add content");
@@ -235,7 +235,7 @@ export default function AdminModulesTab() {
             await updateContent(payload.id, payload);
             setShowEditContentModal(false);
             setUploadFile(null);
-            const modRes = await getModules();
+            const modRes = await getAdminModules();
             setModules(modRes.data);
         } catch (err) {
             alert("Failed to update content");

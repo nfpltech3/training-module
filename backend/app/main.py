@@ -143,18 +143,24 @@ def os_webhook(
     # ── Department events ────────────────────────────────────────────
     if payload.event == "department.created":
         if payload.department_id and payload.department_slug and payload.department_name:
-            exists = db.query(models.Department).filter(
+            dept = db.query(models.Department).filter(
                 models.Department.os_department_id == payload.department_id
             ).first()
-            if not exists:
+            if dept:
+                # Upsert: Update existing record
+                dept.slug = payload.department_slug
+                dept.name = payload.department_name
+                dept.status = 'active'
+            else:
+                # Create new record
                 db.add(models.Department(
                     os_department_id=payload.department_id,
                     slug=payload.department_slug,
                     name=payload.department_name,
                     status='active',
                 ))
-                db.commit()
-        return {"status": "ok", "action": "department_created"}
+            db.commit()
+        return {"status": "ok", "action": "department_upserted"}
 
     if payload.event == "department.updated":
         if payload.department_id:

@@ -78,6 +78,13 @@ export default function AdminDepartmentsTab() {
 
     return (
         <div className="space-y-6 max-w-5xl">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div>
+                    <h2 className="text-xl font-bold text-slate-900">Departments</h2>
+                    <p className="text-sm text-slate-500 italic mt-0.5">Departments are managed in the Nagarkot OS identity server.</p>
+                </div>
+            </div>
+
             {error && (
                 <div className="p-4 bg-red-50 text-red-700 rounded-xl flex items-center gap-2">
                     <AlertCircle className="w-5 h-5" /> {error}
@@ -87,7 +94,10 @@ export default function AdminDepartmentsTab() {
             {/* Create Form */}
             <form onSubmit={handleCreate} className="bg-slate-50 border border-slate-200 p-5 rounded-2xl flex flex-col sm:flex-row gap-4 items-end">
                 <div className="flex-1 w-full">
-                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Department Name</label>
+                    <div className="flex justify-between items-center mb-1.5">
+                        <label className="block text-xs font-bold text-slate-500 uppercase">Manually Add Department</label>
+                        <span className="text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded uppercase font-bold">Local Only</span>
+                    </div>
                     <input
                         type="text"
                         required
