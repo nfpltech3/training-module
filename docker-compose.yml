@@ -19,7 +19,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      - DATABASE_URL=postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       - OS_BACKEND_URL=http://host.docker.internal:3001
       - INTERNAL_API_KEY=${INTERNAL_API_KEY:-nagarkot-internal-dev-key-2024}
     depends_on:

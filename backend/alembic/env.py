@@ -14,13 +14,13 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Pull DATABASE_URL from environment (overrides alembic.ini sqlalchemy.url)
-db_url = os.getenv("DATABASE_URL", "sqlite:///./nagarkot.db")
-config.set_main_option("sqlalchemy.url", db_url)
-
 # Import Base and all models so autogenerate sees every table
 from app.database import Base  # noqa: E402
+from app.db_config import DATABASE_URL  # noqa: E402
 from app import models  # noqa: E402, F401
+
+# Pull DATABASE_URL from environment (overrides alembic.ini sqlalchemy.url)
+config.set_main_option("sqlalchemy.url", DATABASE_URL)
 
 target_metadata = Base.metadata
 
@@ -40,7 +40,7 @@ def run_migrations_offline() -> None:
 
 def run_migrations_online() -> None:
     """Run migrations in 'online' mode (connect to a live DB)."""
-    connectable = create_engine(db_url, poolclass=pool.NullPool)
+    connectable = create_engine(DATABASE_URL, poolclass=pool.NullPool, pool_pre_ping=True)
     with connectable.connect() as connection:
         context.configure(
             connection=connection,

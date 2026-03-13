@@ -9,9 +9,9 @@ def generate_uuid():
     return str(uuid.uuid4())
 
 class ModuleTypeEnum(str, enum.Enum):
-    DEPARTMENT_TRAINING = "Department Training"
-    CLIENT_TRAINING = "Client Training"
-    ON_BOARDING = "On-Boarding"
+    DEPARTMENT_TRAINING = "DEPARTMENT_TRAINING"
+    CLIENT_TRAINING = "CLIENT_TRAINING"
+    ON_BOARDING = "ON_BOARDING"
 
 class ContentTypeEnum(str, enum.Enum):
     VIDEO = "VIDEO"

@@ -3,7 +3,7 @@
 This project is a strictly scoped application designed to distribute training videos and documents across an organization. It focuses on clean content delivery, absolute organizational isolation based on departments, and reliable audit tracking. It explicitly removes extraneous features of a traditional LMS (like quizzes or forums) to prioritize speed and reliability.
 
 ## 🏗 Tech Stack
-- **Backend**: Python (FastAPI), SQLite (SQLAlchemy ORM), Pydantic v2
+- **Backend**: Python (FastAPI), PostgreSQL (SQLAlchemy ORM), Pydantic v2
 - **Auth**: JWT via `python-jose`, strict password hashing via `bcrypt`
 - **Frontend**: React 19 (Vite), React Router v6
 - **Styling**: Tailwind CSS v4, Lucide React Icons
@@ -36,7 +36,7 @@ pip install -r requirements.txt
 # Start the API server
 python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
-*The API will be available at http://localhost:8000. On the first startup, it will automatically generate the `nagarkot.db` file alongside the seed data.*
+*The API will be available at http://localhost:8000. Run Alembic migrations and the seed script before starting the app.*
 
 ### 2. Frontend (React/Vite)
 Open a secondary terminal:
@@ -89,7 +89,7 @@ You need three things from whoever runs the OS backend:
 ```env
 # ── Trainings own secrets ──────────────────────────────────────────────
 SECRET_KEY=replace-with-a-long-random-string-for-jwt-signing
-DATABASE_URL=sqlite:///./nagarkot.db
+DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/nagarkot_training
 
 # ── OS public key (paste the full PEM block, keep the quotes) ──────────
 OS_JWT_PUBLIC_KEY="-----BEGIN PUBLIC KEY-----

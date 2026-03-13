@@ -96,45 +96,12 @@ scheduler = BackgroundScheduler()
 scheduler.add_job(cleanup_old_sso_tokens, "interval", hours=1, id="sso_token_log_cleanup")
 
 
-# --- Startup: Seed data + start background scheduler ---
+# --- Startup: start background scheduler only ---
 @app.on_event("startup")
 def startup_event():
-    # ── Start background scheduler ──
+    # Schema and seed data are managed explicitly via Alembic and seed.py.
     scheduler.start()
-    print("[Scheduler] Started — SSO token-log cleanup runs every 1 h")
-
-    db = SessionLocal()
-    try:
-        # 1. Seed Roles
-        default_roles = ["ADMIN", "MANAGER", "TEAM LEAD", "EMPLOYEE", "CLIENT"]
-        for role_name in default_roles:
-            if not db.query(models.Role).filter(func.lower(models.Role.name) == role_name.lower()).first():
-                db.add(models.Role(name=role_name))
-        db.commit()
-
-        # 2. Seed local departments from OS (if table is empty)
-        if db.query(models.Department).count() == 0:
-            try:
-                res = httpx.get(
-                    f"{OS_BACKEND_URL}/users/internal/departments",
-                    headers={"x-internal-key": INTERNAL_API_KEY},
-                    timeout=10.0,
-                )
-                if res.status_code == 200:
-                    for d in res.json():
-                        db.add(models.Department(
-                            os_department_id=d['id'],
-                            slug=d['slug'],
-                            name=d['name'],
-                            status='active',
-                        ))
-                    db.commit()
-            except httpx.RequestError as exc:
-                print(f"WARNING: Could not seed departments from OS: {exc}")
-
-        # 3. Skip Admin Seed — Handled by OS JIT Provisioning
-    finally:
-        db.close()
+    print("[Scheduler] Started - SSO token-log cleanup runs every 1 h")
 
 
 @app.on_event("shutdown")
