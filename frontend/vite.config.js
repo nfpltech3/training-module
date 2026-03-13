@@ -9,7 +9,7 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
 
   const parseBackendUrl = () => {
-    const configured = env.TRAININGS_BACKEND_URL?.trim();
+    const configured = process.env.TRAININGS_BACKEND_URL?.trim();
     if (!configured) return 'http://localhost:8000';
     if (!/^https?:\/\//i.test(configured)) return 'http://localhost:8000';
     return configured.replace(/\/+$/, '');
