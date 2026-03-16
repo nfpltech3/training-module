@@ -1,31 +1,35 @@
-﻿import React, { useRef, useState, useEffect, useCallback } from 'react';
+
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import YouTube from 'react-youtube';
 
 const SecureVideoPlayer = ({ embedUrl, onProgressUpdate, initialTime = 0 }) => {
-    const playerRef = useRef(null);
-    const furthestRef = useRef(initialTime);
-    const isReadyRef = useRef(false);
-    const isCompletedRef = useRef(false);          // ref so interval always sees latest value
-    const onProgressUpdateRef = useRef(onProgressUpdate); // ref so interval never goes stale
-    const [furthestWatched, setFurthestWatched] = useState(initialTime);
+    // Refs for mutable state that shouldn't trigger re-renders
+    const playerRef           = useRef(null);
+    const furthestRef         = useRef(initialTime);
+    const isReadyRef          = useRef(false);
+    const isCompletedRef      = useRef(false);
+    const onProgressUpdateRef = useRef(onProgressUpdate);
+    const durationRef         = useRef(0);
+    const intervalRef         = useRef(null);
+    const heartbeatRef        = useRef(null);
+    const lastSyncedRef       = useRef(initialTime);
+    const iconTimerRef        = useRef(null);
+    const lastClickTimeRef    = useRef(0);
+    const lastTimeUpdateRef   = useRef(Date.now()); // Tracks real-world time to prevent background tab bugs
+
+    // React state for UI updates
     const [isCompleted, setIsCompleted] = useState(false);
-    const [duration, setDuration] = useState(0);
-    const durationRef = useRef(0);                 // ref mirror of duration for interval callback
-    const intervalRef = useRef(null);
-    const heartbeatRef = useRef(null);
-    const lastSyncedRef = useRef(initialTime);
-    const [isPlaying, setIsPlaying] = useState(false);
-    const [hasStarted, setHasStarted] = useState(false);
-    // Overlay: always visible when paused/idle, fades to invisible while playing
-    const [showOverlayIcon, setShowOverlayIcon] = useState(true);
-    const fadeTimerRef = useRef(null);
+    const [duration,    setDuration]    = useState(0);
+    const [isPlaying,   setIsPlaying]   = useState(false); 
+    const [isBuffering, setIsBuffering] = useState(false);
+    const [flashIcon,   setFlashIcon]   = useState(null);
 
-    // Keep callback ref in sync so the interval closure never goes stale
+    // Keep refs in sync with props/state
     useEffect(() => { onProgressUpdateRef.current = onProgressUpdate; }, [onProgressUpdate]);
-    useEffect(() => { isCompletedRef.current = isCompleted; }, [isCompleted]);
-    useEffect(() => { durationRef.current = duration; }, [duration]);
+    useEffect(() => { isCompletedRef.current = isCompleted; },          [isCompleted]);
+    useEffect(() => { durationRef.current = duration; },                [duration]);
 
-    // Extract video ID from any YouTube URL format
+    // Parse YouTube URLs
     const getVideoId = (url) => {
         try {
             if (!url) return null;
@@ -37,72 +41,80 @@ const SecureVideoPlayer = ({ embedUrl, onProgressUpdate, initialTime = 0 }) => {
                 return urlObj.pathname.slice(1);
             }
             return url;
-        } catch {
-            return url;
-        }
+        } catch { return url; }
     };
 
     const videoId = getVideoId(embedUrl);
 
-    // â”€â”€ Reset ALL state when video changes (prevents state bleed) â”€â”€
+    // Reset player state when videoId or initialTime changes
     useEffect(() => {
-        if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
+        if (intervalRef.current)  { clearInterval(intervalRef.current);  intervalRef.current  = null; }
         if (heartbeatRef.current) { clearInterval(heartbeatRef.current); heartbeatRef.current = null; }
-        if (fadeTimerRef.current) { clearTimeout(fadeTimerRef.current); fadeTimerRef.current = null; }
-        furthestRef.current = initialTime;
-        lastSyncedRef.current = initialTime;
-        isCompletedRef.current = false;
-        durationRef.current = 0;
-        setFurthestWatched(initialTime);
+        if (iconTimerRef.current) { clearTimeout(iconTimerRef.current);  iconTimerRef.current = null; }
+        furthestRef.current       = initialTime;
+        lastSyncedRef.current     = initialTime;
+        isCompletedRef.current    = false;
+        durationRef.current       = 0;
+        isReadyRef.current        = false;
+        playerRef.current         = null;
+        lastTimeUpdateRef.current = Date.now();
         setIsCompleted(false);
         setDuration(0);
         setIsPlaying(false);
-        isReadyRef.current = false;
-        setHasStarted(false);
-        setShowOverlayIcon(true);
-        playerRef.current = null;
+        setIsBuffering(false);
+        setFlashIcon(null);
     }, [videoId, initialTime]);
 
-    // â”€â”€ Silent progress tracking â€” uses refs so it never goes stale â”€â”€
+    // Core progress tracking and anti-skip logic
     const checkProgress = useCallback(() => {
         if (!playerRef.current) return;
         try {
-            const player = playerRef.current;
+            const player      = playerRef.current;
             const currentTime = player.getCurrentTime();
             const vidDuration = player.getDuration();
+            const now         = Date.now();
 
-            if (vidDuration && vidDuration > 0 && durationRef.current === 0) {
+            if (vidDuration > 0 && durationRef.current === 0) {
                 setDuration(vidDuration);
                 durationRef.current = vidDuration;
             }
 
             const currentFurthest = furthestRef.current;
 
-            // Anti-skip: if user jumps ahead beyond what they've watched, rewind
-            if (currentTime > currentFurthest + 2) {
+            // 1. Calculate real-world time elapsed since this function last ran
+            const timeSinceLastCheck = (now - lastTimeUpdateRef.current) / 1000;
+            lastTimeUpdateRef.current = now;
+
+            // 2. Dynamic skip tolerance: Real time passed + 2 seconds of buffer.
+            const allowableDrift = Math.max(2, timeSinceLastCheck + 2);
+
+            if (currentTime > currentFurthest + allowableDrift) {
                 player.seekTo(currentFurthest);
                 return;
             }
 
             if (currentTime > currentFurthest) {
-                furthestRef.current = currentTime;
-                setFurthestWatched(currentTime);
-
+                // Check completion
                 const isNowCompleted = vidDuration > 0 && currentTime >= vidDuration * 0.9;
+                
                 if (isNowCompleted && !isCompletedRef.current) {
                     isCompletedRef.current = true;
                     setIsCompleted(true);
                     onProgressUpdateRef.current(currentTime, true);
-                } else if (currentTime - currentFurthest > 5) {
+                } 
+                // Sync progress every 5 seconds of fresh viewing
+                else if (currentTime - lastSyncedRef.current >= 5) {
+                    lastSyncedRef.current = currentTime;
                     onProgressUpdateRef.current(currentTime, false);
                 }
+
+                furthestRef.current = currentTime;
             }
         } catch (err) {
             console.error('Error reading player state', err);
         }
-    }, []); // stable â€” reads from refs only
+    }, []);
 
-    // Helper used by both onStateChange(ended) and onEnd
     const markCompleted = useCallback(() => {
         if (isCompletedRef.current) return;
         isCompletedRef.current = true;
@@ -126,90 +138,101 @@ const SecureVideoPlayer = ({ embedUrl, onProgressUpdate, initialTime = 0 }) => {
     }, []);
 
     const onPlayerReady = (event) => {
-        playerRef.current = event.target;
+        playerRef.current  = event.target;
         isReadyRef.current = true;
         if (initialTime > 0) event.target.seekTo(initialTime, true);
     };
 
     const onStateChange = (event) => {
-        const playerState = event.data;
-        const playing = playerState === 1;
-        const ended = playerState === 0;
+        const s = event.data;
+
+        if (s === 3) {
+            setIsBuffering(true);
+            return;
+        } else {
+            setIsBuffering(false);
+        }
+
+        if (s === -1 || s === 5) return;
+
+        const playing = s === 1;
+        const ended   = s === 0;
+
         setIsPlaying(playing);
 
         if (playing) {
-            if (!hasStarted) setHasStarted(true);
-            // Fade icon out after brief show
-            setShowOverlayIcon(true);
-            if (fadeTimerRef.current) clearTimeout(fadeTimerRef.current);
-            fadeTimerRef.current = setTimeout(() => setShowOverlayIcon(false), 500);
-            // Start progress polling
+            // Update time ref before starting intervals to ensure accurate drift calculation
+            lastTimeUpdateRef.current = Date.now(); 
+            
             if (!intervalRef.current) intervalRef.current = setInterval(checkProgress, 1000);
-            // 10-second heartbeat
-            if (!heartbeatRef.current) {
-                heartbeatRef.current = setInterval(() => {
-                    const current = furthestRef.current;
-                    if (current > lastSyncedRef.current) {
-                        lastSyncedRef.current = current;
-                        onProgressUpdateRef.current(Math.floor(current), false);
-                    }
-                }, 10000);
-            }
+            if (!heartbeatRef.current) heartbeatRef.current = setInterval(() => {
+                const current = furthestRef.current;
+                if (current > lastSyncedRef.current) {
+                    lastSyncedRef.current = current;
+                    onProgressUpdateRef.current(Math.floor(current), false);
+                }
+            }, 10000);
         } else {
-            if (fadeTimerRef.current) clearTimeout(fadeTimerRef.current);
-            setShowOverlayIcon(true);
             stopIntervals();
-            // State 0 = video ended â†’ mark complete
             if (ended) markCompleted();
         }
     };
 
-    // Belt-and-suspenders: YouTube fires onEnd when video fully ends
     const onEnd = () => {
         setIsPlaying(false);
-        setShowOverlayIcon(true);
         stopIntervals(false);
         markCompleted();
     };
 
-    useEffect(() => {
-        return () => {
-            if (intervalRef.current) clearInterval(intervalRef.current);
-            if (heartbeatRef.current) clearInterval(heartbeatRef.current);
-            if (fadeTimerRef.current) clearTimeout(fadeTimerRef.current);
-        };
-    }, []);
-
-    const togglePlay = () => {
+    // Optimistic UI updates for immediate interaction
+    const handleClick = () => {
         if (!playerRef.current || !isReadyRef.current) return;
-        // Show overlay immediately so user gets instant feedback
-        if (fadeTimerRef.current) clearTimeout(fadeTimerRef.current);
-        setShowOverlayIcon(true);
-        try {
-            const state = playerRef.current.getPlayerState();
-            if (state === 1) {
-                playerRef.current.pauseVideo();
-            } else {
-                playerRef.current.playVideo();
+
+        const now = Date.now();
+        if (now - lastClickTimeRef.current < 200) return;
+        lastClickTimeRef.current = now;
+
+        if (isPlaying || isBuffering) {
+            playerRef.current.pauseVideo();
+            setIsPlaying(false); 
+            setIsBuffering(false);
+            triggerFlash('pause');
+        } else {
+            if (playerRef.current.getPlayerState() === 0) {
+                playerRef.current.seekTo(0);
             }
-        } catch (err) {
-            console.error('togglePlay error:', err);
+            playerRef.current.playVideo();
+            setIsPlaying(true); 
+            triggerFlash('play');
         }
     };
 
-    // Strictly disable all native YouTube chrome
+    const triggerFlash = (icon) => {
+        if (iconTimerRef.current) clearTimeout(iconTimerRef.current);
+        setFlashIcon(icon);
+        iconTimerRef.current = setTimeout(() => setFlashIcon(null), 600);
+    };
+
+    useEffect(() => {
+        return () => {
+            if (intervalRef.current)  clearInterval(intervalRef.current);
+            if (heartbeatRef.current) clearInterval(heartbeatRef.current);
+            if (iconTimerRef.current) clearTimeout(iconTimerRef.current);
+        };
+    }, []);
+
     const opts = {
         width: '100%',
         height: '100%',
         playerVars: {
-            autoplay: 0,
-            controls: 0,
-            disablekb: 1,
+            autoplay:       0,
+            controls:       0, 
+            disablekb:      1, 
             modestbranding: 1,
-            rel: 0,
-            fs: 0,
+            rel:            0,
+            fs:             0,
             iv_load_policy: 3,
-            playsinline: 1,
+            playsinline:    1,
         },
     };
 
@@ -217,7 +240,6 @@ const SecureVideoPlayer = ({ embedUrl, onProgressUpdate, initialTime = 0 }) => {
         <div className="relative w-full max-w-3xl mx-auto rounded-xl overflow-hidden bg-black shadow-lg border border-slate-200">
             <div className="relative aspect-video bg-black">
 
-                {/* Iframe â€” pointer-events: none so all clicks go to our shield */}
                 <div className="absolute inset-0" style={{ pointerEvents: 'none' }}>
                     <YouTube
                         videoId={videoId}
@@ -225,57 +247,48 @@ const SecureVideoPlayer = ({ embedUrl, onProgressUpdate, initialTime = 0 }) => {
                         onReady={onPlayerReady}
                         onStateChange={onStateChange}
                         onEnd={onEnd}
-                        className="w-full h-full"
+                        style={{ width: '100%', height: '100%' }}
                         iframeClassName="w-full h-full"
                     />
                 </div>
 
-                {/*
-                  Full-area click shield (z-10).
-                  A semi-transparent gradient at the bottom hides YouTube's
-                  native hover progress bar that can bleed through the iframe.
-                */}
                 <div
-                    className="absolute inset-0 z-10 flex items-center justify-center cursor-pointer select-none"
-                    onClick={togglePlay}
+                    className="absolute inset-0 z-10 cursor-pointer bg-transparent select-none touch-manipulation"
+                    onClick={handleClick}
                 >
-                    {/* Bottom gradient â€” masks YouTube's seek bar on hover */}
-                    <div
-                        className="absolute bottom-0 left-0 right-0 h-14 pointer-events-none"
-                        style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.6) 0%, transparent 100%)' }}
-                    />
+                    {/* Persistent Icon */}
+                    <div className={`absolute inset-0 flex items-center justify-center pointer-events-none transition-opacity duration-300 ${
+                        !isPlaying && !isBuffering && !flashIcon ? 'opacity-100' : 'opacity-0'
+                    }`}>
+                        <div className="w-20 h-20 rounded-full bg-black/55 backdrop-blur-sm flex items-center justify-center shadow-2xl ring-2 ring-white/20">
+                            <svg className="w-9 h-9 text-white ml-1" fill="currentColor" viewBox="0 0 24 24">
+                                <polygon points="5 3 19 12 5 21 5 3" />
+                            </svg>
+                        </div>
+                    </div>
 
-                    {/* Center play/pause icon with fade transition */}
-                    <div
-                        className="relative z-10 transition-opacity duration-300 ease-in-out"
-                        style={{ opacity: showOverlayIcon ? 1 : 0 }}
-                    >
-                        {!hasStarted ? (
-                            <div className="w-20 h-20 rounded-full bg-black/60 backdrop-blur-sm flex items-center justify-center shadow-2xl ring-2 ring-white/20">
-                                <svg className="w-10 h-10 text-white ml-1" fill="currentColor" viewBox="0 0 24 24">
+                    {/* Flash Icon */}
+                    <div className={`absolute inset-0 flex items-center justify-center pointer-events-none transition-opacity duration-300 ${
+                        flashIcon ? 'opacity-100' : 'opacity-0'
+                    }`}>
+                        <div className="w-20 h-20 rounded-full bg-black/70 backdrop-blur-sm flex items-center justify-center scale-110 transition-transform">
+                            {flashIcon === 'pause' ? (
+                                <svg className="w-9 h-9 text-white" fill="currentColor" viewBox="0 0 24 24">
+                                    <rect x="6" y="4" width="4" height="16" rx="1" />
+                                    <rect x="14" y="4" width="4" height="16" rx="1" />
+                                </svg>
+                            ) : (
+                                <svg className="w-9 h-9 text-white ml-1" fill="currentColor" viewBox="0 0 24 24">
                                     <polygon points="5 3 19 12 5 21 5 3" />
                                 </svg>
-                            </div>
-                        ) : isPlaying ? (
-                            <div className="w-16 h-16 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center">
-                                <svg className="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 24 24">
-                                    <rect x="6" y="4" width="4" height="16" />
-                                    <rect x="14" y="4" width="4" height="16" />
-                                </svg>
-                            </div>
-                        ) : (
-                            <div className="w-20 h-20 rounded-full bg-black/60 backdrop-blur-sm flex items-center justify-center shadow-2xl ring-2 ring-white/20">
-                                <svg className="w-10 h-10 text-white ml-1" fill="currentColor" viewBox="0 0 24 24">
-                                    <polygon points="5 3 19 12 5 21 5 3" />
-                                </svg>
-                            </div>
-                        )}
+                            )}
+                        </div>
                     </div>
                 </div>
 
-                {/* Completion badge */}
+                {/* Completion Badge */}
                 {isCompleted && (
-                    <div className="absolute top-3 right-3 z-20 bg-green-500/90 backdrop-blur-sm text-white text-xs font-bold px-3 py-1.5 rounded-full shadow-lg flex items-center gap-1.5">
+                    <div className="absolute top-3 right-3 z-20 bg-green-500/90 backdrop-blur-sm text-white text-xs font-bold px-3 py-1.5 rounded-full shadow-lg flex items-center gap-1.5 pointer-events-none">
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" />
                         </svg>

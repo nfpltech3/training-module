@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { getModule, getMyProgress, updateProgress } from '../lib/api';
 import SecureVideoPlayer from '../components/SecureVideoPlayer';
 import SecureDocumentViewer from '../components/SecureDocumentViewer';
-import { ChevronLeft, CheckCircle2, Circle, PlayCircle, FileText, Loader2, AlertCircle } from 'lucide-react';
+import { ChevronLeft, CheckCircle2, Circle, PlayCircle, FileText, Loader2, AlertCircle, Clock } from 'lucide-react';
 
 export default function ModuleViewer() {
     const { moduleId } = useParams();
@@ -15,6 +15,9 @@ export default function ModuleViewer() {
     const [activeItem, setActiveItem] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
+    
+    // Timer state for documents
+    const [timeLeft, setTimeLeft] = useState(0);
 
     useEffect(() => {
         const fetchData = async () => {
@@ -57,6 +60,41 @@ export default function ModuleViewer() {
 
         fetchData();
     }, [moduleId]);
+
+    // Handle Timer for Documents
+    useEffect(() => {
+        if (!activeItem || activeItem.content_type !== 'DOCUMENT') {
+            setTimeLeft(0);
+            return;
+        }
+
+        const isDone = progressMap.get(activeItem.id)?.is_completed;
+        if (isDone) {
+            setTimeLeft(0);
+            return;
+        }
+
+        const duration = activeItem.total_duration || 30;
+        setTimeLeft(duration);
+
+        const timer = setInterval(() => {
+            setTimeLeft((prev) => {
+                if (prev <= 1) {
+                    clearInterval(timer);
+                    return 0;
+                }
+                return prev - 1;
+            });
+        }, 1000);
+
+        return () => clearInterval(timer);
+    }, [activeItem?.id, progressMap]);
+
+    const handleAcknowledge = () => {
+        if (activeItem && timeLeft === 0) {
+            handleProgressUpdate(activeItem.total_duration || 30, true);
+        }
+    };
 
     // Handle updates from Video/Document players
     const handleProgressUpdate = async (secondsWatched, isCompleted) => {
@@ -115,27 +153,57 @@ export default function ModuleViewer() {
 
             {/* Header */}
             <header className="bg-white border-b border-slate-200 py-4 px-4 shadow-sm sticky top-0 z-40">
-                <div className="max-w-screen-2xl mx-auto flex items-center gap-4">
-                    <button
-                        onClick={() => navigate('/')}
-                        className="p-2 -ml-2 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition"
-                        title="Back to Dashboard"
-                    >
-                        <ChevronLeft className="w-6 h-6" />
-                    </button>
-                    <div>
-                        <h1 className="text-xl font-bold text-slate-800 leading-tight">
-                            {moduleData?.title}
-                        </h1>
-                        <p className="text-sm text-slate-500 hidden sm:block">
-                            {contentItems.length} items
-                        </p>
+                <div className="max-w-screen-2xl mx-auto flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-4">
+                        <button
+                            onClick={() => navigate('/')}
+                            className="p-2 -ml-2 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition"
+                            title="Back to Dashboard"
+                        >
+                            <ChevronLeft className="w-6 h-6" />
+                        </button>
+                        <div>
+                            <h1 className="text-xl font-bold text-slate-800 leading-tight">
+                                {moduleData?.title}
+                            </h1>
+                            <p className="text-sm text-slate-500 hidden sm:block">
+                                {contentItems.length} items
+                            </p>
+                        </div>
                     </div>
+
+                    {/* Right Side: Document Status/Action */}
+                    {activeItem?.content_type === 'DOCUMENT' && (
+                        <div className="flex items-center gap-3">
+                            {progressMap.get(activeItem.id)?.is_completed ? (
+                                <div className="flex items-center gap-2 bg-green-50 text-green-700 px-4 py-2.5 rounded-xl border border-green-200 text-sm font-bold shadow-sm">
+                                    <CheckCircle2 className="w-5 h-5" />
+                                    Lesson Completed
+                                </div>
+                            ) : timeLeft > 0 ? (
+                                <div className="flex items-center gap-3 bg-amber-50 text-amber-700 px-5 py-2.5 rounded-xl border border-amber-200/60 ring-1 ring-amber-100/50 shadow-sm transition-all duration-300">
+                                    <Clock className="w-5 h-5 animate-pulse" />
+                                    <div className="flex flex-col">
+                                        <span className="text-[10px] uppercase font-bold tracking-widest leading-none opacity-60">Reading Progress</span>
+                                        <span className="text-sm font-extrabold tabular-nums">Minimum read lock: {timeLeft}s</span>
+                                    </div>
+                                </div>
+                            ) : (
+                                <button
+                                    onClick={handleAcknowledge}
+                                    className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-extrabold px-6 py-3 rounded-xl transition-all shadow-lg shadow-blue-200 hover:scale-105 active:scale-95"
+                                >
+                                    <CheckCircle2 className="w-5 h-5" />
+                                    Acknowledge & Complete
+                                </button>
+                            )}
+                        </div>
+                    )}
                 </div>
             </header>
 
             {/* Main Layout (Sidebar + Player) */}
-            <div className="flex-1 max-w-screen-2xl w-full mx-auto flex flex-col md:flex-row shadow-2xl xl:shadow-none xl:my-6 rounded-none xl:rounded-2xl overflow-hidden border-x-0 xl:border border-slate-200">
+            <div className="flex-1 max-w-screen-2xl w-full mx-auto flex flex-col md:flex-row shadow-2xl xl:shadow-none xl:mb-8 rounded-none xl:rounded-2xl overflow-hidden border-x-0 xl:border border-slate-200">
 
                 {/* Sidebar (Content Roster) */}
                 <div className="w-full md:w-80 lg:w-96 bg-white border-r border-slate-200 flex flex-col shrink-0 h-64 md:h-[calc(100vh-140px)]">
@@ -189,26 +257,29 @@ export default function ModuleViewer() {
                 {/* Player View */}
                 <div className="flex-1 bg-slate-900 md:bg-slate-100 relative min-h-[500px]">
                     {activeItem ? (
-                        <div className="absolute inset-0 p-0 md:p-8 overflow-y-auto flex items-center justify-center">
-                            <div className="w-full max-w-5xl mx-auto space-y-4">
+                        <div className="absolute inset-0 p-0 md:pt-2 md:pb-6 md:px-6 overflow-y-auto flex justify-center">
+                            <div className="w-full max-w-5xl mx-auto">
 
-                                {/* The Player Component */}
-                                {activeItem.content_type === 'VIDEO' ? (
-                                    <SecureVideoPlayer
-                                        // Remount completely when changing items so video unloads cleanly
-                                        key={activeItem.id}
-                                        embedUrl={activeItem.embed_url}
-                                        initialTime={progressMap.get(activeItem.id)?.furthest_second_watched || 0}
-                                        onProgressUpdate={handleProgressUpdate}
-                                    />
-                                ) : (
-                                    <SecureDocumentViewer
-                                        key={activeItem.id}
-                                        documentUrl={activeItem.document_url}
-                                        onProgressUpdate={handleProgressUpdate}
-                                        isAlreadyCompleted={!!progressMap.get(activeItem.id)?.is_completed}
-                                    />
-                                )}
+                                {/* The Player Component Container */}
+                                <div className={activeItem.content_type === 'DOCUMENT' ? 'h-[75vh] w-full' : 'w-full'}>
+                                    {activeItem.content_type === 'VIDEO' ? (
+                                        <SecureVideoPlayer
+                                            // Remount completely when changing items so video unloads cleanly
+                                            key={activeItem.id}
+                                            embedUrl={activeItem.embed_url}
+                                            initialTime={progressMap.get(activeItem.id)?.furthest_second_watched || 0}
+                                            onProgressUpdate={handleProgressUpdate}
+                                        />
+                                    ) : (
+                                        <SecureDocumentViewer
+                                            key={activeItem.id}
+                                            documentUrl={activeItem.document_url}
+                                            totalDuration={activeItem.total_duration}
+                                            onProgressUpdate={handleProgressUpdate}
+                                            isAlreadyCompleted={!!progressMap.get(activeItem.id)?.is_completed}
+                                        />
+                                    )}
+                                </div>
 
                                 {/* Meta info block */}
                                 <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mt-4 mx-4 md:mx-0">

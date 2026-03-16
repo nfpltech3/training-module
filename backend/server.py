@@ -10,7 +10,7 @@ def main() -> None:
         "app.main:app",
         host=host,
         port=port,
-        reload=False,
+        reload=True,
     )
 
 

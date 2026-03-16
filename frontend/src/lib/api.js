@@ -73,6 +73,9 @@ export const moveModule = (id, newIndex) =>
 // =====================================================================
 export const createContent = (data) => api.post('/content/', data);
 export const updateContent = (id, data) => api.put(`/content/${id}`, data);
+export const archiveContent = (id) => api.put(`/content/${id}/archive`);
+export const unarchiveContent = (id) => api.put(`/content/${id}/unarchive`);
+export const deleteContentPermanently = (id) => api.delete(`/content/${id}`);
 export const reorderContent = (id, direction) =>
     api.put(`/content/${id}/reorder`, { direction });
 export const moveContent = (id, newIndex) =>

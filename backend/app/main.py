@@ -17,8 +17,8 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from . import models, schemas
 from .database import engine, get_db, SessionLocal
 from .auth import (
-    clear_auth_cookie, create_access_token, get_current_user, require_admin, require_manager,
-    set_auth_cookie,
+    clear_auth_cookie, get_current_user, require_admin, require_manager,
+     create_access_token, set_auth_cookie,
 )
 from .rate_limit import limiter
 from .sso import router as sso_router
@@ -436,9 +436,8 @@ def get_client_organizations(current_user: models.User = Depends(get_current_use
 
 @app.get("/roles/", response_model=List[schemas.RoleResponse])
 def get_roles(db: Session = Depends(get_db)):
-    # Only return roles that are valid module content tags.
-    # ADMIN and TEAM LEAD are user-level roles, not content visibility tags.
-    MODULE_ROLES = ["MANAGER", "EMPLOYEE", "CLIENT"]
+    # These roles can be tagged on modules to control dashboard visibility.
+    MODULE_ROLES = ["ADMIN", "TEAM LEAD", "MANAGER", "EMPLOYEE", "CLIENT"]
     return db.query(models.Role).filter(models.Role.name.in_(MODULE_ROLES)).all()
 
 
@@ -519,77 +518,58 @@ def get_modules(
 
     user_role_name = current_user.role.name.upper()
 
-    if user_role_name == "ADMIN":
-        # admin_view=True: Admin Portal management view — return ALL modules regardless of dept.
-        # admin_view=False (default): Learner/dashboard view — filter by dept as before.
-        if admin_view:
-            pass  # No dept filter — ADMIN sees every module in admin portal
-        elif current_user.department_slug:
-            # App Admin on learner view: their dept + General modules only.
-            query = query.filter(
-                ~models.Module.departments.any(
-                    models.ModuleDepartment.department.has(models.Department.status == 'active')
-                ) |
-                models.Module.departments.any(
-                    models.ModuleDepartment.department.has(
-                        (models.Department.slug == current_user.department_slug) &
-                        (models.Department.status == 'active')
-                    )
-                )
-            )
-        elif department_slug:
-            query = query.filter(
-                models.Module.departments.any(
-                    models.ModuleDepartment.department.has(
-                        (models.Department.slug == department_slug) &
-                        (models.Department.status == 'active')
-                    )
-                )
-            )
-
-    elif user_role_name == "TEAM LEAD":
-        # FIX: Team Leads see MANAGER + EMPLOYEE modules for their dept + General.
-        query = query.filter(
-            models.Module.roles.any(models.Role.name.in_(["EMPLOYEE", "MANAGER"])),
-            (
-                ~models.Module.departments.any(
-                    models.ModuleDepartment.department.has(models.Department.status == 'active')
-                ) |
-                models.Module.departments.any(
-                    models.ModuleDepartment.department.has(
-                        (models.Department.slug == current_user.department_slug) &
-                        (models.Department.status == 'active')
-                    )
-                )
-            )
-        )
-
-    elif user_role_name == "CLIENT":
-        query = query.filter(models.Module.roles.any(models.Role.name.ilike("CLIENT")))
-        if current_user.org_id:
-            query = query.filter(
-                ~models.Module.client_orgs.any() |
-                models.Module.client_orgs.any(
-                    models.ModuleClientOrg.org_id == current_user.org_id
-                )
-            )
+    if admin_view:
+        # ── MANAGEMENT PORTAL VIEW ──────────────────────────────────────
+        if user_role_name == "ADMIN":
+            # App Admin: Sees all modules. Optional department filter.
+            if department_slug:
+                query = query.filter(models.Module.departments.any(
+                    models.ModuleDepartment.department.has(models.Department.slug == department_slug)
+                ))
+        elif user_role_name == "TEAM LEAD":
+            # Team Lead (Dept Head): Sees everything created for their department.
+            if current_user.department_slug:
+                query = query.filter(models.Module.departments.any(
+                    models.ModuleDepartment.department.has(models.Department.slug == current_user.department_slug)
+                ))
+            else:
+                return [] # Should not happen for valid Team Leads
+        else:
+            raise HTTPException(status_code=403, detail="Insufficient portal permissions")
 
     else:
-        # EMPLOYEE — only EMPLOYEE-tagged modules for their dept + General.
-        query = query.filter(
-            models.Module.roles.any(models.Role.name.ilike("EMPLOYEE")),
-            (
-                ~models.Module.departments.any(
-                    models.ModuleDepartment.department.has(models.Department.status == 'active')
-                ) |
-                models.Module.departments.any(
-                    models.ModuleDepartment.department.has(
-                        (models.Department.slug == current_user.department_slug) &
-                        (models.Department.status == 'active')
-                    )
+        # ── LEARNER DASHBOARD VIEW ─────────────────────────────────────
+        # 1. Strict Role Filter: Must match current user role EXACTLY
+        query = query.filter(models.Module.roles.any(models.Role.name == user_role_name))
+
+        # 2. Strict Department Filter: (Dept Match OR General/Global)
+        if user_role_name == "ADMIN":
+            # EXCEPTION: App Admins (Super Admins) see everything tagged 'ADMIN' 
+            # irrespective of department tags on their dashboard.
+            pass 
+        elif user_role_name == "CLIENT":
+            # Client has organization-level isolation
+            if current_user.org_id:
+                query = query.filter(
+                    ~models.Module.client_orgs.any() |
+                    models.Module.client_orgs.any(models.ModuleClientOrg.org_id == current_user.org_id)
                 )
-            )
-        )
+        else:
+            # Standard Users (Team Lead / Employee)
+            # Must match their assigned department OR be a General/Global module.
+            if current_user.department_slug:
+                query = query.filter(
+                    (models.Module.departments.any(
+                        models.ModuleDepartment.department.has(
+                            (models.Department.slug == current_user.department_slug) &
+                            (models.Department.status == 'active')
+                        )
+                    )) | 
+                    (~models.Module.departments.any()) # "General" (no depts tagged)
+                )
+            else:
+                # User has no dept assigned in OS? Show only General modules for their role.
+                query = query.filter(~models.Module.departments.any())
 
     modules = query.order_by(models.Module.sequence_index).all()
 
@@ -599,7 +579,9 @@ def get_modules(
             "department_slugs": [d.department.slug for d in m.departments if d.department],
             "org_ids": [c.org_id for c in m.client_orgs],
             "roles": m.roles,
-            "content_items": m.content_items,
+            "content_items": m.content_items if admin_view else [
+                c for c in m.content_items if c.is_active
+            ],
             "is_active": m.is_active,
             "created_at": m.created_at
         }
@@ -918,6 +900,77 @@ def upload_document(
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
     return {"document_url": f"/uploads/{safe_name}", "original_name": file.filename}
+
+
+@app.put("/content/{content_id}/archive")
+def archive_content(
+    content_id: str,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(require_manager)
+):
+    """Archive a content item: hides it from learners but keeps it visible to admins."""
+    db_content = db.query(models.Content).filter(models.Content.id == content_id).first()
+    if not db_content:
+        raise HTTPException(status_code=404, detail="Content not found")
+
+    module_id = db_content.module_id
+
+    # Archive: preserve progress history
+    db_content.is_active = False
+    db_content.sequence_index = 0
+
+    # Re-index remaining active siblings so sequence stays contiguous
+    remaining = db.query(models.Content).filter(
+        models.Content.module_id == module_id,
+        models.Content.is_active == True,
+        models.Content.id != content_id,
+    ).order_by(models.Content.sequence_index).all()
+
+    for idx, item in enumerate(remaining, start=1):
+        item.sequence_index = idx
+
+    db.commit()
+    return {"detail": "Content archived", "id": content_id}
+
+
+@app.put("/content/{content_id}/unarchive")
+def unarchive_content(
+    content_id: str,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(require_manager)
+):
+    """Restore an archived content item — appends it to the end of the sequence."""
+    db_content = db.query(models.Content).filter(models.Content.id == content_id).first()
+    if not db_content:
+        raise HTTPException(status_code=404, detail="Content not found")
+
+    # Find the current max sequence index among active siblings
+    max_seq = db.query(func.max(models.Content.sequence_index)).filter(
+        models.Content.module_id == db_content.module_id,
+        models.Content.is_active == True,
+    ).scalar() or 0
+
+    db_content.is_active = True
+    db_content.sequence_index = max_seq + 1
+
+    db.commit()
+    return {"detail": "Content restored", "id": content_id}
+
+
+@app.delete("/content/{content_id}")
+def delete_content_permanently(
+    content_id: str,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(require_manager)
+):
+    """Permanently delete a content item from the database."""
+    db_content = db.query(models.Content).filter(models.Content.id == content_id).first()
+    if not db_content:
+        raise HTTPException(status_code=404, detail="Content not found")
+
+    db.delete(db_content)
+    db.commit()
+    return {"detail": "Content permanently deleted", "id": content_id}
 
 
 # =====================================================================

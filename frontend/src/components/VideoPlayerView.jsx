@@ -70,15 +70,18 @@ const VideoPlayerView = ({
                     <div className="w-full">
                         {activeItem.content_type === 'DOCUMENT' ? (
                             <SecureDocumentViewer
-                                embedUrl={activeItem.embedUrl}
-                                hasCompletedInitially={activeItem.status === 'completed'}
-                                onComplete={(time, isCompleted) => {
+                                key={activeItem.id} // Forces a clean timer reset when switching documents
+                                documentUrl={activeItem.document_url || activeItem.embedUrl || activeItem.embed_url}
+                                totalDuration={activeItem.total_duration || 30} // Fallback to 30s if backend is null
+                                isAlreadyCompleted={activeItem.status === 'completed'}
+                                onProgressUpdate={(time, isCompleted) => {
                                     if (onVideoComplete) onVideoComplete(activeVideoIndex, time, isCompleted);
                                 }}
                             />
                         ) : (
                             <SecureVideoPlayer
-                                embedUrl={activeItem.embedUrl}
+                                key={activeItem.id}
+                                embedUrl={activeItem.embedUrl || activeItem.embed_url}
                                 onProgressUpdate={(time, isCompleted) => {
                                     if (onVideoComplete) onVideoComplete(activeVideoIndex, time, isCompleted);
                                 }}
