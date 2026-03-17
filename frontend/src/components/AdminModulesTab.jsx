@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import {
-    getAdminModules, createModule, updateModule, moveModule,
+    getAdminModules, createModule, updateModule, moveModule, deleteModule,
     getAssignableDepartments, getClientOrganizations, getRoles, 
     createContent, updateContent, archiveContent, unarchiveContent, deleteContentPermanently, moveContent, uploadDocument,
     updateProgress, getMyProgress
@@ -87,8 +87,12 @@ export default function AdminModulesTab() {
     const [editContentForm, setEditContentForm] = useState({ id: null, title: '', description: '', content_type: 'VIDEO', embed_url: '', total_duration: 0 });
     const [isEditingContent, setIsEditingContent] = useState(false);
 
-    // Delete confirmation
+    // Delete confirmation (content)
     const [deleteConfirm, setDeleteConfirm] = useState(null); // { id, title } or null
+
+    // Delete module confirmation
+    const [deleteModuleConfirm, setDeleteModuleConfirm] = useState(null); // { id, title } or null
+    const [isDeletingModule, setIsDeletingModule] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
 
     // Content preview (for documents)
@@ -191,6 +195,23 @@ export default function AdminModulesTab() {
             alert(err?.response?.data?.detail || `Failed to ${moduleModalMode} module.`);
         } finally {
             setIsSubmittingModule(false);
+        }
+    };
+
+    const handleDeleteModule = async () => {
+        if (!deleteModuleConfirm) return;
+        try {
+            setIsDeletingModule(true);
+            await deleteModule(deleteModuleConfirm.id);
+            setDeleteModuleConfirm(null);
+            setSelectedModuleId(null);
+            setSuccessMessage('Module permanently deleted.');
+            const modRes = await getAdminModules();
+            setModules(modRes.data);
+        } catch (err) {
+            alert(err?.response?.data?.detail || 'Failed to delete module.');
+        } finally {
+            setIsDeletingModule(false);
         }
     };
 
@@ -529,8 +550,16 @@ export default function AdminModulesTab() {
                                         <button 
                                             onClick={openEditModuleModal}
                                             className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition"
+                                            title="Edit Module"
                                         >
                                             <Edit2 className="w-5 h-5" />
+                                        </button>
+                                        <button
+                                            onClick={() => setDeleteModuleConfirm({ id: selectedModule.id, title: selectedModule.title })}
+                                            className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition"
+                                            title="Delete Module"
+                                        >
+                                            <Trash2 className="w-5 h-5" />
                                         </button>
                                     </div>
                                     <p className="text-slate-500 text-lg max-w-2xl">{selectedModule.description || 'Add a description to tell learners what they will learn.'}</p>
@@ -924,6 +953,41 @@ export default function AdminModulesTab() {
                                 className="flex-1 py-3 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-2xl transition flex items-center justify-center gap-2 disabled:opacity-50"
                             >
                                 {isDeleting && <Loader2 className="w-4 h-4 animate-spin" />}
+                                Delete
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Delete Module Confirmation Modal */}
+            {deleteModuleConfirm && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                    <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm animate-in fade-in" onClick={() => setDeleteModuleConfirm(null)} />
+                    <div className="bg-white rounded-[28px] shadow-2xl w-full max-w-sm relative z-10 p-8 text-center animate-in zoom-in-95 duration-200">
+                        <div className="w-14 h-14 bg-rose-50 rounded-2xl flex items-center justify-center mx-auto mb-5">
+                            <Trash2 className="w-7 h-7 text-rose-500" />
+                        </div>
+                        <h3 className="text-xl font-bold text-slate-800 mb-2">Delete Module?</h3>
+                        <p className="text-sm text-slate-500 mb-2">
+                            Are you sure you want to permanently delete <strong className="text-slate-700">"{deleteModuleConfirm.title}"</strong>?
+                        </p>
+                        <p className="text-xs text-rose-500 font-semibold mb-6">
+                            All content items and learner progress within this module will also be permanently removed. This action cannot be undone.
+                        </p>
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => setDeleteModuleConfirm(null)}
+                                className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-2xl transition"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleDeleteModule}
+                                disabled={isDeletingModule}
+                                className="flex-1 py-3 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-2xl transition flex items-center justify-center gap-2 disabled:opacity-50"
+                            >
+                                {isDeletingModule && <Loader2 className="w-4 h-4 animate-spin" />}
                                 Delete
                             </button>
                         </div>

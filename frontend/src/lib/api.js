@@ -67,6 +67,7 @@ export const reorderModule = (id, direction) =>
     api.put(`/modules/${id}/reorder`, { direction });
 export const moveModule = (id, newIndex) =>
     api.put(`/modules/${id}/move`, { new_index: newIndex });
+export const deleteModule = (id) => api.delete(`/modules/${id}`);
 
 // =====================================================================
 //  CONTENT

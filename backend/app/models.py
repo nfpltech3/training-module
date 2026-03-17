@@ -97,7 +97,8 @@ class Module(Base):
 
     content_items = relationship(
         "Content", back_populates="module",
-        order_by="Content.sequence_index"
+        order_by="Content.sequence_index",
+        passive_deletes=True,
     )
 
 class Content(Base):

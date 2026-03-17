@@ -792,6 +792,39 @@ def move_module(
     return {"detail": "Move successful"}
 
 
+@app.delete("/modules/{module_id}")
+def delete_module(
+    module_id: str,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(require_admin),  # Strict ADMIN only — destructive action
+):
+    """Permanently delete a module and all its content from the database.
+
+    CASCADE foreign keys handle removal of:
+      - content items (and their user_progress via content FK cascade)
+      - module_departments mappings
+      - module_client_orgs mappings
+      - module_roles association rows
+    """
+    db_module = db.query(models.Module).filter(models.Module.id == module_id).first()
+    if not db_module:
+        raise HTTPException(status_code=404, detail="Module not found")
+
+    db.delete(db_module)
+    db.flush()  # Execute the delete so sequence re-index doesn't include this module
+
+    # Re-index remaining modules to keep sequence contiguous
+    remaining = db.query(models.Module).filter(
+        models.Module.is_active == True
+    ).order_by(models.Module.sequence_index).all()
+
+    for idx, mod in enumerate(remaining, start=1):
+        mod.sequence_index = idx
+
+    db.commit()
+    return {"detail": "Module permanently deleted", "id": module_id}
+
+
 # =====================================================================
 #  CONTENT
 # =====================================================================
