@@ -1081,42 +1081,36 @@ def admin_report_summary(
     for user in users_query.all():
         user_role_name = user.role.name.upper() if user.role else "EMPLOYEE"
 
-        # FIX: ADMIN and TEAM LEAD users see MANAGER + EMPLOYEE modules.
-        # Pure EMPLOYEEs only see EMPLOYEE modules.
-        if user_role_name in ["ADMIN", "TEAM LEAD"]:
-            visible_content_count = db.query(func.count(models.Content.id)).join(models.Module).filter(
-                models.Module.roles.any(models.Role.name.in_(["EMPLOYEE", "MANAGER"])),
-                (
-                    ~models.Module.departments.any(
-                        models.ModuleDepartment.department.has(models.Department.status == 'active')
-                    ) |
-                    models.Module.departments.any(
-                        models.ModuleDepartment.department.has(
-                            (models.Department.slug == user.department_slug) &
-                            (models.Department.status == 'active')
-                        )
-                    )
-                ),
-                models.Module.is_active == True,
-                models.Content.is_active == True
-            ).scalar()
+        # Mirror the exact same visibility logic used in get_modules for Learner Dashboard view
+        base_query = db.query(func.count(models.Content.id)).join(models.Module).filter(
+            models.Module.roles.any(models.Role.name == user_role_name),
+            models.Module.is_active == True,
+            models.Content.is_active == True
+        )
+        
+        if user_role_name == "ADMIN":
+            pass
+        elif user_role_name == "CLIENT":
+            if user.org_id:
+                base_query = base_query.filter(
+                    ~models.Module.client_orgs.any() |
+                    models.Module.client_orgs.any(models.ModuleClientOrg.org_id == user.org_id)
+                )
         else:
-            visible_content_count = db.query(func.count(models.Content.id)).join(models.Module).filter(
-                models.Module.roles.any(models.Role.name.ilike("EMPLOYEE")),
-                (
-                    ~models.Module.departments.any(
-                        models.ModuleDepartment.department.has(models.Department.status == 'active')
-                    ) |
-                    models.Module.departments.any(
+            if user.department_slug:
+                base_query = base_query.filter(
+                    (models.Module.departments.any(
                         models.ModuleDepartment.department.has(
                             (models.Department.slug == user.department_slug) &
                             (models.Department.status == 'active')
                         )
-                    )
-                ),
-                models.Module.is_active == True,
-                models.Content.is_active == True
-            ).scalar()
+                    )) | 
+                    (~models.Module.departments.any())
+                )
+            else:
+                base_query = base_query.filter(~models.Module.departments.any())
+                
+        visible_content_count = base_query.scalar()
 
         completed_count = db.query(func.count(models.UserProgress.id)).filter(
             models.UserProgress.user_id == user.id,
@@ -1155,41 +1149,36 @@ def admin_report_user_detail(
 
     target_role_name = user.role.name.upper() if user.role else "EMPLOYEE"
 
-    # FIX: Mirror the same module visibility logic used in the dashboard.
-    if target_role_name in ["ADMIN", "TEAM LEAD"]:
-        visible_content = db.query(models.Content, models.Module).join(models.Module).filter(
-            models.Module.roles.any(models.Role.name.in_(["EMPLOYEE", "MANAGER"])),
-            (
-                ~models.Module.departments.any(
-                    models.ModuleDepartment.department.has(models.Department.status == 'active')
-                ) |
-                models.Module.departments.any(
-                    models.ModuleDepartment.department.has(
-                        (models.Department.slug == user.department_slug) &
-                        (models.Department.status == 'active')
-                    )
-                )
-            ),
-            models.Module.is_active == True,
-            models.Content.is_active == True
-        ).order_by(models.Module.sequence_index, models.Content.sequence_index).all()
+    # Mirror the same module visibility logic used in the dashboard view
+    base_query = db.query(models.Content, models.Module).join(models.Module).filter(
+        models.Module.roles.any(models.Role.name == target_role_name),
+        models.Module.is_active == True,
+        models.Content.is_active == True
+    )
+    
+    if target_role_name == "ADMIN":
+        pass
+    elif target_role_name == "CLIENT":
+        if user.org_id:
+            base_query = base_query.filter(
+                ~models.Module.client_orgs.any() |
+                models.Module.client_orgs.any(models.ModuleClientOrg.org_id == user.org_id)
+            )
     else:
-        visible_content = db.query(models.Content, models.Module).join(models.Module).filter(
-            models.Module.roles.any(models.Role.name.ilike("EMPLOYEE")),
-            (
-                ~models.Module.departments.any(
-                    models.ModuleDepartment.department.has(models.Department.status == 'active')
-                ) |
-                models.Module.departments.any(
+        if user.department_slug:
+            base_query = base_query.filter(
+                (models.Module.departments.any(
                     models.ModuleDepartment.department.has(
                         (models.Department.slug == user.department_slug) &
                         (models.Department.status == 'active')
                     )
-                )
-            ),
-            models.Module.is_active == True,
-            models.Content.is_active == True
-        ).order_by(models.Module.sequence_index, models.Content.sequence_index).all()
+                )) | 
+                (~models.Module.departments.any())
+            )
+        else:
+            base_query = base_query.filter(~models.Module.departments.any())
+            
+    visible_content = base_query.order_by(models.Module.sequence_index, models.Content.sequence_index).all()
 
     progress_map = {
         p.content_id: p
