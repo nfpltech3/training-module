@@ -82,6 +82,8 @@ const VideoPlayerView = ({
                             <SecureVideoPlayer
                                 key={activeItem.id}
                                 embedUrl={activeItem.embedUrl || activeItem.embed_url}
+                                isAlreadyCompleted={activeItem.status === 'completed'}
+                                initialTime={activeItem.furthest_second_watched || 0}
                                 onProgressUpdate={(time, isCompleted) => {
                                     if (onVideoComplete) onVideoComplete(activeVideoIndex, time, isCompleted);
                                 }}
