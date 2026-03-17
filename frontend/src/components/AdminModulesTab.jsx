@@ -25,6 +25,12 @@ const ROLE_LABELS = {
     CLIENT: 'Client',
 };
 
+const MODULE_TYPE_LABELS = {
+    DEPARTMENT_TRAINING: 'Department Training',
+    CLIENT_TRAINING: 'Client Training',
+    ON_BOARDING: 'On-Boarding',
+};
+
 // --- Inline toast for transient success messages ---
 function SuccessToast({ message, onDismiss }) {
     useEffect(() => {
@@ -512,7 +518,7 @@ export default function AdminModulesTab() {
                             >
                                 <div className="flex justify-between items-start mb-1">
                                     <span className={`text-xs font-bold uppercase tracking-tighter ${selectedModuleId === m.id ? 'text-blue-100' : 'text-slate-400'}`}>
-                                        {m.module_type}
+                                        {MODULE_TYPE_LABELS[m.module_type] || m.module_type}
                                     </span>
                                     <Layers className={`w-3.5 h-3.5 ${selectedModuleId === m.id ? 'text-blue-200' : 'text-slate-300'}`} />
                                 </div>

@@ -170,9 +170,9 @@ export default function ModuleFormModal({
                                     className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:bg-white transition"
                                 >
                                     <option value="">— None —</option>
-                                    <option value="Department Training">Department Training</option>
-                                    <option value="Client Training">Client Training</option>
-                                    <option value="On-Boarding">On-Boarding</option>
+                                    <option value="DEPARTMENT_TRAINING">Department Training</option>
+                                    <option value="CLIENT_TRAINING">Client Training</option>
+                                    <option value="ON_BOARDING">On-Boarding</option>
                                 </select>
                             </div>
                         </div>
