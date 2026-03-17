@@ -5,7 +5,7 @@ const YOUTUBE_OPTS = {
     width: '100%',
     height: '100%',
     playerVars: {
-        autoplay:       0,
+        autoplay:       1,
         controls:       1,
         disablekb:      1,
         modestbranding: 1,

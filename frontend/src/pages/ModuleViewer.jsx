@@ -94,7 +94,12 @@ export default function ModuleViewer() {
         }, 1000);
 
         return () => clearInterval(timer);
-    }, [activeItem?.id, videoRequired, progressMap]);
+    // progressMap intentionally excluded — including it would restart the
+    // timer on every progress save (e.g. every pause), resetting timeLeft.
+    // The isDone check only needs to run on item switch (activeItem?.id)
+    // and when video duration first arrives (videoRequired).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeItem?.id, videoRequired]);
 
     // ── Callbacks from SecureVideoPlayer ─────────────────────────────
     const handleDurationReady = useCallback((requiredSeconds) => {
