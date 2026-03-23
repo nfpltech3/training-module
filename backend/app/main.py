@@ -4,7 +4,7 @@ import httpx
 from datetime import datetime, timedelta
 from typing import List, Optional
 
-from fastapi import FastAPI, Depends, HTTPException, Request, Response, UploadFile, File, Header, status
+from fastapi import FastAPI, Depends, HTTPException, Request, Response, UploadFile, File, Header, status, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session, joinedload
@@ -14,7 +14,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from . import models, schemas
+from . import models, schemas, email_service
 from .database import engine, get_db, SessionLocal
 from .auth import (
     clear_auth_cookie, get_current_user, require_admin, require_manager,
@@ -123,6 +123,7 @@ class OsWebhookPayload(BaseModel):
     # User event fields (absent on department events)
     os_user_id: Optional[str] = None
     email: Optional[str] = None
+    company_email: Optional[str] = None
     # Department event fields (absent on user events)
     department_id: Optional[str] = None
     department_slug: Optional[str] = None
@@ -216,6 +217,15 @@ def os_webhook(
         print(f"[OS webhook] {payload.event}: activated user {payload.os_user_id} ({payload.email})")
         return {"status": "ok", "action": "reactivated"}
 
+    if payload.event == "user.updated":
+        if payload.email:
+            user.email = payload.email
+        if payload.company_email is not None:
+            user.company_email = payload.company_email or None
+        db.commit()
+        print(f"[OS webhook] {payload.event}: synced user {payload.os_user_id} (company_email={payload.company_email})")
+        return {"status": "ok", "action": "updated"}
+
     return {"status": "ignored", "reason": "unknown_event"}
 
 
@@ -281,6 +291,7 @@ def login(
         user = models.User(
             os_user_id=os_user_id,
             email=os_user.get("email"),
+            company_email=os_user.get("company_email"),
             full_name=os_user.get("name"),
             department_slug=os_user.get("department_slug"),
             org_id=os_user.get("org_id"),
@@ -291,6 +302,7 @@ def login(
     else:
         # Sync read-only cache on every login
         user.email = os_user.get("email")
+        user.company_email = os_user.get("company_email")
         user.full_name = os_user.get("name")
         user.department_slug = os_user.get("department_slug")
         user.org_id = os_user.get("org_id")
@@ -319,6 +331,7 @@ def login(
             "id": user.id,
             "os_user_id": user.os_user_id,
             "email": user.email,
+            "company_email": user.company_email,
             "full_name": user.full_name,
             "role_id": user.role_id,
             "role": {"id": user.role.id, "name": user.role.name},
@@ -831,18 +844,23 @@ def delete_module(
 @app.post("/content/", response_model=schemas.ContentResponse)
 def create_content(
     content: schemas.ContentCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     admin: models.User = Depends(require_manager)
 ):
     max_seq = db.query(func.max(models.Content.sequence_index)).filter(
         models.Content.module_id == content.module_id
     ).scalar() or 0
-    db_content = models.Content(**content.model_dump())
+    db_content = models.Content(**content.model_dump(exclude={"notify_users"}))
     if db_content.sequence_index == 0:
         db_content.sequence_index = max_seq + 1
     db.add(db_content)
     db.commit()
     db.refresh(db_content)
+
+    if content.notify_users:
+        background_tasks.add_task(email_service.send_content_notification_emails, db, db_content.id, admin.id)
+
     return db_content
 
 

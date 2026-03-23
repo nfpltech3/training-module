@@ -62,6 +62,8 @@ class User(Base):
     id = Column(String, primary_key=True, default=generate_uuid)
     os_user_id = Column(String, unique=True, index=True, nullable=False) # The true identity link
     email = Column(String, nullable=False) # Read-only cache
+    company_email = Column(String, nullable=True) # Read-only cache
+
     full_name = Column(String, nullable=False)         # Read-only cache
     department_slug = Column(String, nullable=True)    # Read-only cache from OS
     org_id = Column(String, nullable=True)             # Read-only cache from OS (client org)

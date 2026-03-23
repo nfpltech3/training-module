@@ -63,7 +63,7 @@ class ContentBase(BaseModel):
 
 
 class ContentCreate(ContentBase):
-    pass
+    notify_users: bool = False
 
 
 class ContentUpdate(BaseModel):

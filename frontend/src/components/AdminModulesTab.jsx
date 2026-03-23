@@ -12,7 +12,8 @@ import {
     Video, FileText,
     Upload, Loader2, X, CheckCircle2, Clock,
     BookOpen, Layers, ExternalLink, Eye, RotateCcw, Archive,
-    FileSpreadsheet, FileCode, FileJson, FileType, FileBarChart
+    FileSpreadsheet, FileCode, FileJson, FileType, FileBarChart,
+    Mail
 } from 'lucide-react';
 import ModuleFormModal from './ModuleFormModal';
 import SecureDocumentViewer from './SecureDocumentViewer';
@@ -87,6 +88,7 @@ export default function AdminModulesTab() {
     const [uploadFile, setUploadFile] = useState(null);
     const [isCreatingContent, setIsCreatingContent] = useState(false);
     const [contentValidationError, setContentValidationError] = useState('');
+    const [notifyUsers, setNotifyUsers] = useState(false);
 
     // Content edit modal
     const [showEditContentModal, setShowEditContentModal] = useState(false);
@@ -313,12 +315,14 @@ export default function AdminModulesTab() {
                 ...contentForm, 
                 module_id: selectedModuleId, 
                 document_url: documentUrl,
-                total_duration: duration || 30 // Fallback to 30s
+                total_duration: duration || 30,
+                notify_users: notifyUsers
             });
             
             setContentForm({ title: '', description: '', content_type: 'VIDEO', embed_url: '', total_duration: 0 });
             setUploadFile(null);
-            setSuccessMessage('Content added successfully!');
+            setNotifyUsers(false);
+            setSuccessMessage(notifyUsers ? 'Content added & notifications sent!' : 'Content added successfully!');
             const modRes = await getAdminModules();
             setModules(modRes.data);
         } catch (err) {
@@ -679,7 +683,19 @@ export default function AdminModulesTab() {
                                             className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 text-sm resize-none h-16"
                                         />
                                     </div>
-                                    <div className="md:col-span-12 flex justify-end pt-2">
+                                    <div className="md:col-span-12 flex items-center justify-between pt-2">
+                                        <label className="flex items-center gap-2 cursor-pointer select-none group">
+                                            <input
+                                                type="checkbox"
+                                                checked={notifyUsers}
+                                                onChange={e => setNotifyUsers(e.target.checked)}
+                                                className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                            />
+                                            <Mail className={`w-4 h-4 ${notifyUsers ? 'text-blue-600' : 'text-slate-400'} transition-colors`} />
+                                            <span className={`text-sm font-semibold ${notifyUsers ? 'text-blue-700' : 'text-slate-500'} group-hover:text-blue-600 transition-colors`}>
+                                                Notify users via email
+                                            </span>
+                                        </label>
                                         <button 
                                             type="submit" disabled={isCreatingContent}
                                             className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition flex items-center gap-2 shadow-lg shadow-blue-100 disabled:opacity-50"
