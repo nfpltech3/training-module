@@ -160,6 +160,8 @@ def sso_login(request: Request, body: SsoRequest, response: Response, db: Sessio
         # Sync identity fields from OS on every login
         user.full_name = name or user.full_name
         user.email = email or user.email
+        if company_email:
+            user.company_email = company_email
         user.department_slug = department_slug
         user.org_id = org_id
         user.is_app_admin = is_app_admin
@@ -212,6 +214,7 @@ def sso_login(request: Request, body: SsoRequest, response: Response, db: Sessio
 
         user = models.User(
             email=email,
+            company_email=company_email,
             full_name=name or email,
             role_id=role.id,
             status="active",
