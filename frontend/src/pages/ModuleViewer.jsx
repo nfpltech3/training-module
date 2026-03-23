@@ -70,20 +70,27 @@ export default function ModuleViewer() {
 
     // ── Timer — runs continuously for both DOCUMENT and VIDEO ─────────
     // Starts when item loads (document) or when duration arrives (video).
-    // Counts down regardless of play/pause state, same as document timer.
+    // Counts down from the remaining (unwatched) time based on saved progress.
     useEffect(() => {
         if (!activeItem) return;
 
-        const isDone = progressMap.get(activeItem.id)?.is_completed;
+        const progress = progressMap.get(activeItem.id);
+        const isDone = progress?.is_completed;
         if (isDone) { setTimeLeft(0); return; }
+
+        // Get how much the user has already watched and sync it with the timer clock
+        const watchedSeconds = progress?.furthest_second_watched || 0;
 
         // For VIDEO, wait until onDurationReady has set videoRequired
         if (activeItem.content_type === 'VIDEO') {
             if (videoRequired === 0) return; // duration not loaded yet
-            setTimeLeft(videoRequired);
+            
+            const remaining = Math.max(0, videoRequired - watchedSeconds);
+            setTimeLeft(remaining);
         } else {
             const duration = activeItem.total_duration || 30;
-            setTimeLeft(duration);
+            const remaining = Math.max(0, duration - watchedSeconds);
+            setTimeLeft(remaining);
         }
 
         const timer = setInterval(() => {
