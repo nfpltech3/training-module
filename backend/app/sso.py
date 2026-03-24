@@ -71,6 +71,7 @@ def sso_login(request: Request, body: SsoRequest, response: Response, db: Sessio
     token_id = payload.get("token_id")
     os_user_id = payload.get("user_id") # OS defines this as user_id
     email = payload.get("email")
+    company_email = payload.get("company_email")
     name = payload.get("name")
     user_type = payload.get("user_type") # 'employee' or 'client'
     department_slug = payload.get("department_slug")
