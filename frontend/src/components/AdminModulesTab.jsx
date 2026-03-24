@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
+import YouTube from 'react-youtube';
 import {
     getAdminModules, createModule, updateModule, moveModule, deleteModule,
     getAssignableDepartments, getClientOrganizations, getRoles, 
@@ -64,6 +65,20 @@ function extractUrlLabel(url) {
     }
 }
 
+export const getVideoId = (url) => {
+    try {
+        if (!url) return null;
+        const urlObj = new URL(url);
+        if (urlObj.hostname.includes('youtube.com')) {
+            if (urlObj.pathname === '/watch') return urlObj.searchParams.get('v');
+            if (urlObj.pathname.startsWith('/shorts/')) return urlObj.pathname.split('/')[2];
+        } else if (urlObj.hostname.includes('youtu.be')) {
+            return urlObj.pathname.slice(1);
+        }
+        return url;
+    } catch { return url; }
+};
+
 export default function AdminModulesTab() {
     const { user } = useAuth();
     const [modules, setModules] = useState([]);
@@ -89,6 +104,10 @@ export default function AdminModulesTab() {
     const [isCreatingContent, setIsCreatingContent] = useState(false);
     const [contentValidationError, setContentValidationError] = useState('');
     const [notifyUsers, setNotifyUsers] = useState(false);
+
+    // Video duration verification state
+    const [verifyingVideoUrl, setVerifyingVideoUrl] = useState(null);
+    const [videoDurationCache, setVideoDurationCache] = useState({});
 
     // Content edit modal
     const [showEditContentModal, setShowEditContentModal] = useState(false);
@@ -143,6 +162,16 @@ export default function AdminModulesTab() {
             setSelectedModule(null);
         }
     }, [modules, selectedModuleId]);
+
+    const sortedContentItems = useMemo(() => {
+        if (!selectedModule?.content_items) return [];
+        return [...selectedModule.content_items].sort((a, b) => {
+            if (a.is_active === b.is_active) {
+                return (a.sequence_index || 0) - (b.sequence_index || 0);
+            }
+            return a.is_active ? -1 : 1;
+        });
+    }, [selectedModule?.content_items]);
 
     const filteredModules = useMemo(() => {
         const term = searchTerm.toLowerCase();
@@ -231,7 +260,7 @@ export default function AdminModulesTab() {
         if (destination.index === source.index) return;
 
         // Optimistic UI Update
-        const updatedContent = Array.from(selectedModule.content_items);
+        const updatedContent = Array.from(sortedContentItems);
         const [removed] = updatedContent.splice(source.index, 1);
         updatedContent.splice(destination.index, 0, removed);
 
@@ -291,10 +320,36 @@ export default function AdminModulesTab() {
             setContentValidationError('Content title is required.');
             return;
         }
-        if (contentForm.content_type === 'VIDEO' && !contentForm.embed_url.trim()) {
-            setContentValidationError('YouTube URL is required for video content.');
-            return;
+
+        let finalDuration = contentForm.total_duration || 30;
+
+        if (contentForm.content_type === 'VIDEO') {
+            if (!contentForm.embed_url.trim()) {
+                setContentValidationError('YouTube URL is required for video content.');
+                return;
+            }
+            const vid = getVideoId(contentForm.embed_url);
+            if (!vid) {
+                setContentValidationError('Invalid YouTube URL.');
+                return;
+            }
+            const cachedDur = videoDurationCache[vid];
+            if (cachedDur === undefined) {
+                setContentValidationError('Verifying video length, please wait a moment and click Save again...');
+                setVerifyingVideoUrl(contentForm.embed_url);
+                return;
+            }
+            if (cachedDur === 0) {
+                setContentValidationError('Live streams or videos without a valid length cannot be added.');
+                return;
+            }
+            if (cachedDur > 900) {
+                setContentValidationError(`Video exceeds the strict 15-minute limit. (Length is ${Math.round(cachedDur / 60)} minutes)`);
+                return;
+            }
+            finalDuration = cachedDur;
         }
+
         if (contentForm.content_type === 'DOCUMENT' && !uploadFile) {
             setContentValidationError('Please select a file to upload.');
             return;
@@ -315,7 +370,7 @@ export default function AdminModulesTab() {
                 ...contentForm, 
                 module_id: selectedModuleId, 
                 document_url: documentUrl,
-                total_duration: duration || 30,
+                total_duration: finalDuration,
                 notify_users: notifyUsers
             });
             
@@ -334,9 +389,36 @@ export default function AdminModulesTab() {
 
     const handleEditContentSubmit = async (e) => {
         e.preventDefault();
+        setContentValidationError('');
+
+        let finalDuration = editContentForm.total_duration;
+
+        if (editContentForm.content_type === 'VIDEO') {
+            const vid = getVideoId(editContentForm.embed_url);
+            if (!vid) {
+                setContentValidationError('Invalid YouTube URL.');
+                return;
+            }
+            const cachedDur = videoDurationCache[vid];
+            if (cachedDur === undefined) {
+                setContentValidationError('Verifying video length, please wait a moment and click Save again...');
+                setVerifyingVideoUrl(editContentForm.embed_url);
+                return;
+            }
+            if (cachedDur === 0) {
+                setContentValidationError('Live streams or videos without a valid length cannot be added.');
+                return;
+            }
+            if (cachedDur > 900) {
+                setContentValidationError(`Video exceeds the strict 15-minute limit. (Length is ${Math.round(cachedDur / 60)} minutes)`);
+                return;
+            }
+            finalDuration = cachedDur;
+        }
+
         try {
             setIsEditingContent(true);
-            const payload = { ...editContentForm };
+            const payload = { ...editContentForm, total_duration: finalDuration };
             if (payload.content_type === 'DOCUMENT' && uploadFile) {
                 const uploadRes = await uploadDocument(uploadFile);
                 payload.document_url = uploadRes.data.document_url;
@@ -462,6 +544,20 @@ export default function AdminModulesTab() {
         };
         return mapping[ext] || 'Document';
     };
+
+    // Auto-trigger video verification when user stops typing
+    useEffect(() => {
+        const form = showEditContentModal ? editContentForm : contentForm;
+        if (form.content_type === 'VIDEO' && form.embed_url) {
+            const vid = getVideoId(form.embed_url);
+            if (vid && videoDurationCache[vid] === undefined) {
+                const timer = setTimeout(() => {
+                    setVerifyingVideoUrl(form.embed_url);
+                }, 500);
+                return () => clearTimeout(timer);
+            }
+        }
+    }, [contentForm.embed_url, editContentForm.embed_url, contentForm.content_type, editContentForm.content_type, showEditContentModal, videoDurationCache]);
 
     // ── Loading State ────────────────────────────────────────────────
     if (loading && modules.length === 0) {
@@ -718,14 +814,14 @@ export default function AdminModulesTab() {
                                     <Droppable droppableId="content-list">
                                         {(provided) => (
                                             <div {...provided.droppableProps} ref={provided.innerRef} className="space-y-3">
-                                                {(!selectedModule.content_items || selectedModule.content_items.length === 0) ? (
+                                                {sortedContentItems.length === 0 ? (
                                                     <div className="py-12 text-center bg-slate-50 border-2 border-dashed border-slate-200 rounded-3xl">
                                                         <BookOpen className="w-8 h-8 text-slate-300 mx-auto mb-2" />
                                                         <p className="text-slate-400 font-bold">This module has no content yet.</p>
                                                     </div>
                                                 ) : (
-                                                    selectedModule.content_items.map((item, index) => (
-                                                        <Draggable key={item.id} draggableId={item.id} index={index}>
+                                                    sortedContentItems.map((item, index) => (
+                                                        <Draggable key={item.id} draggableId={item.id} index={index} isDragDisabled={!item.is_active}>
                                                             {(provided, snapshot) => (
                                                                     <div
                                                                         ref={provided.innerRef}
@@ -751,38 +847,46 @@ export default function AdminModulesTab() {
                                                                     <div className="flex-1 min-w-0 pr-4">
                                                                         <h5 className="font-bold text-slate-700 text-sm truncate">{item.title}</h5>
                                                                         <div className="flex items-center gap-2 mt-0.5">
-                                                                            <span className="text-[10px] font-bold text-slate-400 opacity-60 uppercase tracking-wider">
+                                                                            <span className="text-[10px] font-bold text-slate-400 opacity-60 uppercase tracking-wider shrink-0">
                                                                                 {item.content_type === 'VIDEO' ? 'YouTube Video' : getFileLabel(item.document_url)}
-                                                                                {item.content_type === 'DOCUMENT' && item.total_duration > 0 && (
-                                                                                    <span className="flex items-center gap-1 text-[10px] font-bold text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded-md ml-1 ring-1 ring-blue-100/50">
-                                                                                        <Clock className="w-2.5 h-2.5" />
-                                                                                        {Math.floor(item.total_duration / 60)}m {item.total_duration % 60}s lock
-                                                                                    </span>
-                                                                                )}
                                                                             </span>
                                                                             {/* Show the URL / filename */}
                                                                             {(item.embed_url || item.document_url) && (
                                                                                 <>
-                                                                                    <span className="text-slate-200">·</span>
                                                                                     {item.content_type === 'VIDEO' ? (
-                                                                                        <a 
-                                                                                            href={item.embed_url} 
-                                                                                            target="_blank" 
-                                                                                            rel="noopener noreferrer"
-                                                                                            className="text-[10px] text-blue-500 hover:text-blue-700 font-bold truncate max-w-[200px] flex items-center gap-1 transition-colors"
-                                                                                            title="Open in YouTube"
-                                                                                        >
-                                                                                            <ExternalLink className="w-3 h-3 shrink-0" />
-                                                                                            {extractUrlLabel(item.embed_url)}
-                                                                                        </a>
+                                                                                        <>
+                                                                                            <span className="text-slate-200">·</span>
+                                                                                            <div className="flex items-center gap-2 overflow-hidden flex-wrap">
+                                                                                                <a 
+                                                                                                    href={item.embed_url} 
+                                                                                                    target="_blank" 
+                                                                                                    rel="noopener noreferrer"
+                                                                                                    className="text-[10px] text-blue-500 hover:text-blue-700 font-bold truncate max-w-[200px] flex items-center gap-1 transition-colors"
+                                                                                                    title="Open in YouTube"
+                                                                                                >
+                                                                                                    <ExternalLink className="w-3 h-3 shrink-0" />
+                                                                                                    {extractUrlLabel(item.embed_url)}
+                                                                                                </a>
+                                                                                                {item.total_duration > 0 && (
+                                                                                                    <span className="flex items-center gap-1 text-[10px] font-bold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded-md ring-1 ring-rose-100 shrink-0">
+                                                                                                        <Clock className="w-2.5 h-2.5" />
+                                                                                                        {Math.floor(item.total_duration / 60)}m {item.total_duration % 60}s
+                                                                                                    </span>
+                                                                                                )}
+                                                                                            </div>
+                                                                                        </>
                                                                                     ) : (
-                                                                                        <span 
-                                                                                            className="text-[10px] text-slate-400 truncate max-w-[200px] flex items-center gap-1" 
-                                                                                            title={item.document_url}
-                                                                                        >
-                                                                                            <FileText className="w-3 h-3 shrink-0" />
-                                                                                            {extractUrlLabel(item.document_url)}
-                                                                                        </span>
+                                                                                        item.total_duration > 0 && (
+                                                                                            <>
+                                                                                                <span className="text-slate-200">·</span>
+                                                                                                <div className="flex items-center gap-2 overflow-hidden flex-wrap">
+                                                                                                    <span className="flex items-center gap-1 text-[10px] font-bold text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded-md ring-1 ring-blue-100 shrink-0">
+                                                                                                        <Clock className="w-2.5 h-2.5" />
+                                                                                                        {Math.floor(item.total_duration / 60)}m {item.total_duration % 60}s lock
+                                                                                                    </span>
+                                                                                                </div>
+                                                                                            </>
+                                                                                        )
                                                                                     )}
                                                                                 </>
                                                                             )}
@@ -1085,6 +1189,31 @@ export default function AdminModulesTab() {
                             )}
                         </div>
                     </div>
+                </div>
+            )}
+
+            {/* --- Hidden Video Length Validator --- */}
+            {verifyingVideoUrl && (
+                <div style={{ position: 'absolute', opacity: 0, width: '1px', height: '1px', overflow: 'hidden', pointerEvents: 'none' }}>
+                    <YouTube
+                        videoId={getVideoId(verifyingVideoUrl)}
+                        opts={{ width: '1', height: '1', playerVars: { autoplay: 1, mute: 1, controls: 0 } }}
+                        onReady={(e) => {
+                            const d = e.target.getDuration();
+                            if (d !== undefined && d !== null) setVideoDurationCache(prev => ({ ...prev, [getVideoId(verifyingVideoUrl)]: Math.ceil(d) }));
+                            e.target.pauseVideo();
+                        }}
+                        onStateChange={(e) => {
+                            const d = e.target.getDuration();
+                            if (d > 0) {
+                                setVideoDurationCache(prev => ({ ...prev, [getVideoId(verifyingVideoUrl)]: Math.ceil(d) }));
+                                e.target.pauseVideo();
+                            }
+                        }}
+                        onError={(e) => {
+                            setVideoDurationCache(prev => ({ ...prev, [getVideoId(verifyingVideoUrl)]: 0 })); // block entirely broken videos
+                        }}
+                    />
                 </div>
             )}
         </div>
