@@ -599,6 +599,8 @@ def get_modules(
             "created_at": m.created_at
         }
         for m in modules
+        # Hide modules with zero active content from learner dashboard
+        if admin_view or any(c.is_active for c in m.content_items)
     ]
 
 
@@ -623,7 +625,7 @@ def get_module(
         "department_slugs": [d.department.slug for d in m.departments if d.department],
         "org_ids": [c.org_id for c in m.client_orgs],
         "roles": m.roles,
-        "content_items": m.content_items,
+        "content_items": [c for c in m.content_items if c.is_active],
         "is_active": m.is_active,
         "created_at": m.created_at
     }
