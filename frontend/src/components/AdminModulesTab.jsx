@@ -1,11 +1,11 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import YouTube from 'react-youtube';
 import {
     getAdminModules, createModule, updateModule, moveModule, deleteModule,
     getAssignableDepartments, getClientOrganizations, getRoles, 
     createContent, updateContent, archiveContent, unarchiveContent, deleteContentPermanently, moveContent, uploadDocument,
-    updateProgress, getMyProgress
+    updateProgress, getMyProgress, getVideoLimit
 } from '../lib/api';
 import { useAuth } from '../lib/AuthContext';
 import {
@@ -86,6 +86,7 @@ export default function AdminModulesTab() {
     const [clientOrgs, setClientOrgs] = useState([]);
     const [roles, setRoles] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [videoMaxDurationSeconds, setVideoMaxDurationSeconds] = useState(1800);
 
     // Sidebar/Content State
     const [searchTerm, setSearchTerm] = useState('');
@@ -108,6 +109,10 @@ export default function AdminModulesTab() {
     // Video duration verification state
     const [verifyingVideoUrl, setVerifyingVideoUrl] = useState(null);
     const [videoDurationCache, setVideoDurationCache] = useState({});
+
+    // Self-healing: auto-fix legacy videos with stale durations (≤30s default)
+    const [durationFixQueue, setDurationFixQueue] = useState([]); // [{contentId, videoId, embedUrl}]
+    const fixedIdsRef = useRef(new Set());
 
     // Content edit modal
     const [showEditContentModal, setShowEditContentModal] = useState(false);
@@ -136,16 +141,20 @@ export default function AdminModulesTab() {
     const fetchInitialData = async () => {
         try {
             setLoading(true);
-            const [modRes, deptRes, clientRes, rolesRes] = await Promise.all([
+            const [modRes, deptRes, clientRes, rolesRes, settingsRes] = await Promise.all([
                 getAdminModules(), 
                 getAssignableDepartments(), 
                 getClientOrganizations(),
-                getRoles()
+                getRoles(),
+                getVideoLimit()
             ]);
             setModules(modRes.data);
             setDepartments(deptRes.data);
             setClientOrgs(clientRes.data);
             setRoles(rolesRes.data);
+            if (settingsRes.data != null && settingsRes.data.value != null) {
+                setVideoMaxDurationSeconds(settingsRes.data.value);
+            }
         } catch (err) {
             console.error(err);
         } finally {
@@ -162,6 +171,31 @@ export default function AdminModulesTab() {
             setSelectedModule(null);
         }
     }, [modules, selectedModuleId]);
+
+    // Self-healing: detect legacy videos with stale durations
+    useEffect(() => {
+        if (!selectedModule?.content_items) return;
+        const stale = selectedModule.content_items
+            .filter(c => c.content_type === 'VIDEO' && c.embed_url && (c.total_duration == null || c.total_duration <= 30))
+            .filter(c => !fixedIdsRef.current.has(c.id))
+            .map(c => ({ contentId: c.id, videoId: getVideoId(c.embed_url), embedUrl: c.embed_url }));
+        if (stale.length > 0) {
+            setDurationFixQueue(prev => {
+                const existingIds = new Set(prev.map(q => q.contentId));
+                const newItems = stale.filter(s => !existingIds.has(s.contentId));
+                return [...prev, ...newItems];
+            });
+        }
+    }, [selectedModule?.content_items]);
+
+    // Self-healing: process the queue one video at a time
+    useEffect(() => {
+        if (durationFixQueue.length === 0 || verifyingVideoUrl) return;
+        const next = durationFixQueue[0];
+        if (next) {
+            setVerifyingVideoUrl(next.embedUrl);
+        }
+    }, [durationFixQueue, verifyingVideoUrl]);
 
     const sortedContentItems = useMemo(() => {
         if (!selectedModule?.content_items) return [];
@@ -298,7 +332,7 @@ export default function AdminModulesTab() {
                 // We'll use a safer approach: creating a blob URL and using the browser context if possible
                 // or just reading the raw string count for /Page type.
                 const count = (readerContents.match(/\/Type\s*\/Page\b/g) || []).length;
-                const duration = Math.max(30, count * 15); // 30s per page, min 30s
+                const duration = count * 15; // 15s per page
                 
                 if (showEditContentModal) {
                     setEditContentForm(prev => ({ ...prev, total_duration: duration }));
@@ -321,7 +355,7 @@ export default function AdminModulesTab() {
             return;
         }
 
-        let finalDuration = contentForm.total_duration || 30;
+        let finalDuration = contentForm.total_duration || 0;
 
         if (contentForm.content_type === 'VIDEO') {
             if (!contentForm.embed_url.trim()) {
@@ -343,8 +377,8 @@ export default function AdminModulesTab() {
                 setContentValidationError('Live streams or videos without a valid length cannot be added.');
                 return;
             }
-            if (cachedDur > 900) {
-                setContentValidationError(`Video exceeds the strict 15-minute limit. (Length is ${Math.round(cachedDur / 60)} minutes)`);
+            if (videoMaxDurationSeconds > 0 && cachedDur > videoMaxDurationSeconds) {
+                setContentValidationError(`Video exceeds the ${Math.floor(videoMaxDurationSeconds / 60)}-minute limit.`);
                 return;
             }
             finalDuration = cachedDur;
@@ -409,8 +443,8 @@ export default function AdminModulesTab() {
                 setContentValidationError('Live streams or videos without a valid length cannot be added.');
                 return;
             }
-            if (cachedDur > 900) {
-                setContentValidationError(`Video exceeds the strict 15-minute limit. (Length is ${Math.round(cachedDur / 60)} minutes)`);
+            if (videoMaxDurationSeconds > 0 && cachedDur > videoMaxDurationSeconds) {
+                setContentValidationError(`Video exceeds the ${Math.floor(videoMaxDurationSeconds / 60)}-minute limit.`);
                 return;
             }
             finalDuration = cachedDur;
@@ -1198,20 +1232,73 @@ export default function AdminModulesTab() {
                     <YouTube
                         videoId={getVideoId(verifyingVideoUrl)}
                         opts={{ width: '1', height: '1', playerVars: { autoplay: 1, mute: 1, controls: 0 } }}
-                        onReady={(e) => {
+                        onReady={async (e) => {
                             const d = e.target.getDuration();
-                            if (d !== undefined && d !== null) setVideoDurationCache(prev => ({ ...prev, [getVideoId(verifyingVideoUrl)]: Math.ceil(d) }));
+                            if (d !== undefined && d !== null) {
+                                const duration = Math.ceil(d);
+                                const vId = getVideoId(verifyingVideoUrl);
+                                setVideoDurationCache(prev => ({ ...prev, [vId]: duration }));
+                                
+                                // Check if this is a self-healing task
+                                const healTask = durationFixQueue.find(q => q.videoId === vId);
+                                if (healTask) {
+                                    try {
+                                        await updateContent(healTask.contentId, { total_duration: duration });
+                                        fixedIdsRef.current.add(healTask.contentId);
+                                        setModules(prev => prev.map(m => ({
+                                            ...m,
+                                            content_items: m.content_items?.map(c => 
+                                                c.id === healTask.contentId ? { ...c, total_duration: duration } : c
+                                            )
+                                        })));
+                                        setDurationFixQueue(prev => prev.filter(q => q.contentId !== healTask.contentId));
+                                        setVerifyingVideoUrl(null);
+                                    } catch (err) {
+                                        console.error("Auto-fix failed:", err);
+                                        setDurationFixQueue(prev => prev.slice(1));
+                                        setVerifyingVideoUrl(null);
+                                    }
+                                }
+                            }
                             e.target.pauseVideo();
                         }}
-                        onStateChange={(e) => {
+                        onStateChange={async (e) => {
                             const d = e.target.getDuration();
                             if (d > 0) {
-                                setVideoDurationCache(prev => ({ ...prev, [getVideoId(verifyingVideoUrl)]: Math.ceil(d) }));
+                                const duration = Math.ceil(d);
+                                const vId = getVideoId(verifyingVideoUrl);
+                                setVideoDurationCache(prev => ({ ...prev, [vId]: duration }));
+                                
+                                // Duplicate check for onStateChange fallback
+                                const healTask = durationFixQueue.find(q => q.videoId === vId);
+                                if (healTask) {
+                                    try {
+                                        await updateContent(healTask.contentId, { total_duration: duration });
+                                        fixedIdsRef.current.add(healTask.contentId);
+                                        setModules(prev => prev.map(m => ({
+                                            ...m,
+                                            content_items: m.content_items?.map(c => 
+                                                c.id === healTask.contentId ? { ...c, total_duration: duration } : c
+                                            )
+                                        })));
+                                        setDurationFixQueue(prev => prev.filter(q => q.contentId !== healTask.contentId));
+                                        setVerifyingVideoUrl(null);
+                                    } catch (err) {
+                                        setDurationFixQueue(prev => prev.slice(1));
+                                        setVerifyingVideoUrl(null);
+                                    }
+                                }
                                 e.target.pauseVideo();
                             }
                         }}
                         onError={(e) => {
-                            setVideoDurationCache(prev => ({ ...prev, [getVideoId(verifyingVideoUrl)]: 0 })); // block entirely broken videos
+                            const vId = getVideoId(verifyingVideoUrl);
+                            setVideoDurationCache(prev => ({ ...prev, [vId]: 0 }));
+                            const healTask = durationFixQueue.find(q => q.videoId === vId);
+                            if (healTask) {
+                                setDurationFixQueue(prev => prev.filter(q => q.contentId !== healTask.contentId));
+                                setVerifyingVideoUrl(null);
+                            }
                         }}
                     />
                 </div>

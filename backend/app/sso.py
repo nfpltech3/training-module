@@ -28,7 +28,7 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", ".env"))
 router = APIRouter()
 
 # ─── Load OS public key ───────────────────────────────────────────
-OS_JWT_PUBLIC_KEY = os.getenv("OS_JWT_PUBLIC_KEY", "").replace("\\n", "\n")
+OS_JWT_PUBLIC_KEY = os.getenv("OS_JWT_PUBLIC_KEY", "").strip('"').replace("\\n", "\n")
 OS_BACKEND_URL = os.getenv("OS_BACKEND_URL", "http://localhost:3001")
 INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY", "")
 

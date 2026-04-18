@@ -105,4 +105,10 @@ export const getReportSummary = (departmentSlug) => {
 export const getReportUserDetail = (userId) =>
     api.get(`/admin/reports/user/${userId}`);
 
+// =====================================================================
+//  SETTINGS
+// =====================================================================
+export const getVideoLimit = () => api.get('/settings/video-limit');
+export const updateVideoLimit = (seconds) => api.put('/settings/video-limit', { value: seconds });
+
 export default api;

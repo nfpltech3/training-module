@@ -20,6 +20,7 @@ export default function ModuleViewer() {
     const [timeLeft,      setTimeLeft]      = useState(0);
     // Video-only: required seconds received from SecureVideoPlayer once duration loads
     const [videoRequired,  setVideoRequired]  = useState(0);
+    const [isPlaying,     setIsPlaying]     = useState(false);
 
     // ── Data fetch ────────────────────────────────────────────────────
     useEffect(() => {
@@ -66,11 +67,10 @@ export default function ModuleViewer() {
     useEffect(() => {
         setTimeLeft(0);
         setVideoRequired(0);
+        setIsPlaying(false);
     }, [activeItem?.id]);
 
     // ── Timer — runs continuously for both DOCUMENT and VIDEO ─────────
-    // Starts when item loads (document) or when duration arrives (video).
-    // Counts down from the remaining (unwatched) time based on saved progress.
     useEffect(() => {
         if (!activeItem) return;
 
@@ -78,35 +78,41 @@ export default function ModuleViewer() {
         const isDone = progress?.is_completed;
         if (isDone) { setTimeLeft(0); return; }
 
-        // Get how much the user has already watched and sync it with the timer clock
         const watchedSeconds = progress?.furthest_second_watched || 0;
 
-        // For VIDEO, wait until onDurationReady has set videoRequired
         if (activeItem.content_type === 'VIDEO') {
             if (videoRequired === 0) return; // duration not loaded yet
+            if (!isPlaying) return; // timer frozen while not playing
             
-            const remaining = Math.max(0, videoRequired - watchedSeconds);
-            setTimeLeft(remaining);
+            setTimeLeft(prev => {
+                if (prev === 0) return Math.max(0, videoRequired - watchedSeconds);
+                return prev;
+            });
+
+            const timer = setInterval(() => {
+                setTimeLeft(prev => {
+                    if (prev <= 1) { clearInterval(timer); return 0; }
+                    return prev - 1;
+                });
+            }, 1000);
+
+            return () => clearInterval(timer);
         } else {
             const duration = activeItem.total_duration || 30;
             const remaining = Math.max(0, duration - watchedSeconds);
             setTimeLeft(remaining);
+
+            const timer = setInterval(() => {
+                setTimeLeft(prev => {
+                    if (prev <= 1) { clearInterval(timer); return 0; }
+                    return prev - 1;
+                });
+            }, 1000);
+
+            return () => clearInterval(timer);
         }
-
-        const timer = setInterval(() => {
-            setTimeLeft(prev => {
-                if (prev <= 1) { clearInterval(timer); return 0; }
-                return prev - 1;
-            });
-        }, 1000);
-
-        return () => clearInterval(timer);
-    // progressMap intentionally excluded — including it would restart the
-    // timer on every progress save (e.g. every pause), resetting timeLeft.
-    // The isDone check only needs to run on item switch (activeItem?.id)
-    // and when video duration first arrives (videoRequired).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [activeItem?.id, videoRequired]);
+    }, [activeItem?.id, videoRequired, isPlaying]);
 
     // ── Callbacks from SecureVideoPlayer ─────────────────────────────
     const handleDurationReady = useCallback((requiredSeconds) => {
@@ -311,6 +317,7 @@ export default function ModuleViewer() {
                                             initialTime={progressMap.get(activeItem.id)?.furthest_second_watched || 0}
                                             onProgressUpdate={handleProgressUpdate}
                                             onDurationReady={handleDurationReady}
+                                            onPlayStateChange={setIsPlaying}
                                         />
                                     ) : (
                                         <SecureDocumentViewer

@@ -180,3 +180,52 @@ Trainings backend:
         ▼
 Frontend stores JWT in localStorage, user is logged in
 ```
+1. Root Directory Setup
+All commands assume you are starting from c:\projects\Training Module.
+
+Terminal 1: Nagarket OS Backend (Hub API)
+This is the central identity provider. It must be running for the Training Module to verify users.
+
+Directory: c:\projects\Training Module\OS
+Command:
+powershell
+npm run backend
+URL: http://localhost:3001
+Terminal 2: Nagarkot OS Frontend (Hub Portal)
+This is the main dashboard where you log in initially.
+
+Directory: c:\projects\Training Module\OS
+Command:
+powershell
+npm run frontend
+URL: http://localhost:3000
+Terminal 3: Training Module Backend (Spoke API)
+This is the FastAPI server we just updated with the new settings logic.
+
+Directory: c:\projects\Training Module\backend
+Command:
+powershell
+venv\Scripts\activate; python server.py
+Alternative Command: venv\Scripts\activate ; python -m uvicorn app.main:app --port 8000 --reload
+URL: http://localhost:8000
+Terminal 4: Training Module Frontend (Spoke Client)
+This is the learner/admin interface for trainings.
+
+Directory: c:\projects\Training Module\frontend
+Command:
+powershell
+npm run dev
+URL: http://localhost:5173
+Testing Workflow
+Ensure DB is running: Make sure your PostgreSQL instance is active.
+Start OS Services first: Start Terminals 1 and 2.
+Start Training Services: Start Terminals 3 and 4.
+Login Process:
+Open http://localhost:5173 (Training Module).
+Click "Login". It will redirect you to the OS Portal (localhost:3000).
+Log in with your OS credentials.
+OS will redirect you back to the Training Module with an SSO token.
+Verify Settings:
+Log in as an Admin (admin@nagarkot.com).
+Navigate to the new Settings tab in the top navigation.
+Try changing the video limit and verify it updates correctly!

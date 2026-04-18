@@ -29,6 +29,7 @@ export default function AppLayout() {
         { to: '/', label: 'Dashboard', icon: Home, show: true },
         { to: '/admin', label: 'Admin Portal', icon: Shield, show: isManager },
         { to: '/admin/reports', label: 'Reports', icon: BarChart3, show: isManager },
+        { to: '/admin/settings', label: 'Settings', icon: Settings, show: user?.role?.name === 'ADMIN' },
     ];
 
     const visibleNavItems = navItems.filter((n) => n.show);

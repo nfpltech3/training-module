@@ -841,6 +841,56 @@ def delete_module(
 
 
 # =====================================================================
+#  SETTINGS
+# =====================================================================
+def _get_video_max_duration(db: Session) -> int:
+    """Read video_max_duration_seconds from app_settings. 0 = no limit."""
+    setting = db.query(models.AppSetting).filter(
+        models.AppSetting.setting_key == "video_max_duration_seconds"
+    ).first()
+    return int(setting.setting_value) if setting and setting.setting_value.isdigit() else 1800
+
+
+def _check_video_duration(db: Session, total_duration: int) -> None:
+    """Raise HTTP 400 if total_duration exceeds the configured limit (0 = skip)."""
+    limit = _get_video_max_duration(db)
+    if limit > 0 and total_duration > limit:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Video duration ({total_duration}s) exceeds the maximum allowed limit of {limit}s ({limit // 60} minutes)."
+        )
+
+
+@app.get("/settings/video-limit", response_model=schemas.SettingResponse)
+def get_video_limit(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    limit = _get_video_max_duration(db)
+    return {"key": "video_max_duration_seconds", "value": limit}
+
+
+@app.put("/settings/video-limit", response_model=schemas.SettingResponse)
+def update_video_limit(
+    payload: schemas.SettingUpdate,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(require_admin)
+):
+    if payload.value < 0:
+        raise HTTPException(status_code=400, detail="Value must be >= 0.")
+    setting = db.query(models.AppSetting).filter(
+        models.AppSetting.setting_key == "video_max_duration_seconds"
+    ).first()
+    if not setting:
+        setting = models.AppSetting(setting_key="video_max_duration_seconds", setting_value=str(payload.value))
+        db.add(setting)
+    else:
+        setting.setting_value = str(payload.value)
+    db.commit()
+    return {"key": "video_max_duration_seconds", "value": payload.value}
+
+
+# =====================================================================
 #  CONTENT
 # =====================================================================
 @app.post("/content/", response_model=schemas.ContentResponse)
@@ -850,6 +900,8 @@ def create_content(
     db: Session = Depends(get_db),
     admin: models.User = Depends(require_manager)
 ):
+    if content.content_type == models.ContentTypeEnum.VIDEO and content.total_duration is not None:
+        _check_video_duration(db, content.total_duration)
     max_seq = db.query(func.max(models.Content.sequence_index)).filter(
         models.Content.module_id == content.module_id
     ).scalar() or 0
@@ -874,6 +926,17 @@ def update_content(
     admin: models.User = Depends(require_manager)
 ):
     db_content = db.query(models.Content).filter(models.Content.id == content_id).first()
+    if not db_content:
+        raise HTTPException(status_code=404, detail="Content not found")
+
+    # Re-validate video duration when duration or URL changes
+    update_data = payload.model_dump(exclude_unset=True)
+    needs_duration_check = "total_duration" in update_data or "embed_url" in update_data
+    c_type = payload.content_type if payload.content_type else db_content.content_type
+    duration_to_check = update_data.get("total_duration", db_content.total_duration)
+    if needs_duration_check and c_type == models.ContentTypeEnum.VIDEO and duration_to_check is not None:
+        _check_video_duration(db, duration_to_check)
+
     for key, value in payload.model_dump(exclude_unset=True).items():
         setattr(db_content, key, value)
     db.commit()

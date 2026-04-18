@@ -174,6 +174,13 @@ class UserDetailedReport(BaseModel):
     is_completed: bool
     completed_at: Optional[datetime] = None
 
+# --- Settings Schemas ---
+class SettingUpdate(BaseModel):
+    value: int  # seconds; 0 = no limit
+
+class SettingResponse(BaseModel):
+    key: str
+    value: int
 
 # Forward ref resolution for self-referencing schemas
 TokenResponse.model_rebuild()

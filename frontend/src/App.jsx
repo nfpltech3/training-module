@@ -14,6 +14,7 @@ import LearnerDashboard from './pages/LearnerDashboard';
 import ModuleViewer from './pages/ModuleViewer';
 import AdminDashboard from './pages/AdminDashboard';
 import AdminReports from './pages/AdminReports';
+import AdminSettings from './pages/AdminSettings';
 import SsoPage from './pages/SsoPage';
 
 export default function App() {
@@ -51,6 +52,14 @@ export default function App() {
               element={
                 <ProtectedRoute requireManager>
                   <AdminReports />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="admin/settings"
+              element={
+                <ProtectedRoute requireAdmin>
+                  <AdminSettings />
                 </ProtectedRoute>
               }
             />

@@ -23,6 +23,7 @@ export default function SecureVideoPlayer({
     isAlreadyCompleted = false,
     initialTime        = 0,
     onDurationReady,   // (requiredSeconds: number) => void — fires once when duration known
+    onPlayStateChange, // (isPlaying: boolean) => void
 }) {
     const playerRef   = useRef(null);
     const positionRef = useRef(null); // saves watch position every 10s
@@ -74,6 +75,7 @@ export default function SecureVideoPlayer({
         const s = event.data;
 
         if (s === 1) { // PLAYING
+            if (onPlayStateChange) onPlayStateChange(true);
             if (playerRef.current) notifyDuration(playerRef.current);
 
             if (!positionRef.current) {
@@ -86,6 +88,7 @@ export default function SecureVideoPlayer({
             }
 
         } else if (s === 2) { // PAUSED
+            if (onPlayStateChange) onPlayStateChange(false);
             if (positionRef.current) { clearInterval(positionRef.current); positionRef.current = null; }
             if (playerRef.current) {
                 const t = playerRef.current.getCurrentTime();
@@ -93,9 +96,12 @@ export default function SecureVideoPlayer({
             }
 
         } else if (s === 0) { // ENDED
+            if (onPlayStateChange) onPlayStateChange(false);
             if (positionRef.current) { clearInterval(positionRef.current); positionRef.current = null; }
+        } else {
+            // Buffering (3), unstarted (-1), etc.
+            if (onPlayStateChange) onPlayStateChange(false);
         }
-        // Buffering (3), unstarted (-1) — don't fire play state change
     };
 
     return (

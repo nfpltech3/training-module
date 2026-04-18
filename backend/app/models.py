@@ -138,3 +138,9 @@ class SsoTokenLog(Base):
     used = Column(Boolean, default=True)
     consumed_at = Column(DateTime, default=datetime.utcnow, index=True)
     app_slug = Column(String, nullable=True)
+
+class AppSetting(Base):
+    __tablename__ = "app_settings"
+    setting_key = Column(String, primary_key=True)
+    setting_value = Column(String, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
