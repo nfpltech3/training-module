@@ -166,8 +166,13 @@ def sso_login(request: Request, body: SsoRequest, response: Response, db: Sessio
         user.department_slug = department_slug
         user.org_id = org_id
         user.is_app_admin = is_app_admin
-        if user.os_user_id is None:
+        if user.os_user_id != os_user_id:
             user.os_user_id = os_user_id
+
+        # Reactivate user if they were previously deactivated but 
+        # OS verified their session is now active.
+        if user.status != "active":
+            user.status = "active"
 
         # Sync role — is_app_admin is authoritative for ADMIN,
         # user_type distinguishes EMPLOYEE vs CLIENT for everyone else

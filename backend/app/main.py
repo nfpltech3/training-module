@@ -200,10 +200,10 @@ def os_webhook(
         return {"status": "ignored", "reason": "user_not_found"}
 
     if payload.event == "user.deleted":
-        user.status = "deleted"
+        db.delete(user)
         db.commit()
-        print(f"[OS webhook] {payload.event}: soft-deleted user {payload.os_user_id} ({payload.email})")
-        return {"status": "ok", "action": "soft_deleted"}
+        print(f"[OS webhook] {payload.event}: hard-deleted user {payload.os_user_id} ({payload.email})")
+        return {"status": "ok", "action": "hard_deleted"}
 
     if payload.event == "user.deactivated":
         user.status = "disabled"
@@ -284,6 +284,13 @@ def login(
 
     # JIT Provision or Sync Cache
     user = db.query(models.User).filter(models.User.os_user_id == os_user_id).first()
+    
+    if not user:
+        # Fallback to email matching for recreated OS users
+        email = os_user.get("email")
+        if email:
+            user = db.query(models.User).filter(models.User.email == email).first()
+
     role_name = resolve_role_name(is_app_admin, is_team_lead, user_type)
     role = db.query(models.Role).filter(models.Role.name == role_name).first()
 
@@ -296,7 +303,7 @@ def login(
             department_slug=os_user.get("department_slug"),
             org_id=os_user.get("org_id"),
             is_app_admin=is_app_admin,
-            role_id=role.id
+            role_id=role.id if role else None
         )
         db.add(user)
     else:
@@ -307,6 +314,10 @@ def login(
         user.department_slug = os_user.get("department_slug")
         user.org_id = os_user.get("org_id")
         user.is_app_admin = is_app_admin
+        if user.os_user_id != os_user_id:
+            user.os_user_id = os_user_id
+        if user.status != "active":
+            user.status = "active"
         if role:
             user.role_id = role.id
 
@@ -913,7 +924,11 @@ def create_content(
     db.refresh(db_content)
 
     if content.notify_users:
-        background_tasks.add_task(email_service.send_content_notification_emails, db, db_content.id, admin.id)
+        background_tasks.add_task(
+            email_service.send_content_notification_emails,
+            db_content.id,
+            admin.id
+    )
 
     return db_content
 

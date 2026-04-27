@@ -53,18 +53,16 @@ Modules employ tri-layered filtering. A module must pass all active filters to b
 ### Roles and Their Permissions
 
 1.  **ADMIN (App Admin / Super Admin)**
-    *   **Visibility**: Sees all content designated for the `ADMIN` role. On the Learner Dashboard, `ADMIN` role tags override department strictness.
-    *   **Abilities**: Can view all backend data, bypass department filters on management boards, sync departments, force resync data.
+    *   **Visibility**: Sees all content designated for the `ADMIN` role. On the Learner Dashboard, `ADMIN` role tags override department strictness. On management boards, they can view and filter modules across all departments.
+    *   **Abilities**: Can view all backend data across all departments (Users, Reports, Modules). Can create, edit, and permanently delete modules. Can update user statuses and non-admin roles. Can force a sync of department data from the OS. Can configure global app settings (e.g., video duration limits).
 2.  **TEAM LEAD (Department Head)**
-    *   **Visibility**: Sees content tagged for `TEAM LEAD` and filtered to their specific `department_slug`, plus `Global` (no department).
-    *   **Abilities**: Can create and assign modules to their *own* department (or global). Can view reports for users in their own department.
-3.  **MANAGER**
-    *   *(Note: Manager currently behaves similarly to Team Lead based on routes config, though logic explicitly gates on `ADMIN` or `TEAM LEAD` for actions).*
-4.  **EMPLOYEE**
-    *   **Visibility**: Sees content tagged for `EMPLOYEE` that is either scoped to their `department_slug` or marked fully Global.
+    *   **Visibility**: Sees content tagged for `TEAM LEAD` and filtered to their specific `department_slug`, plus `Global` (no department). On management boards, they only see modules assigned to their department.
+    *   **Abilities**: Can create, edit, and assign modules and content strictly to their *own* department (or global). Can view reports for users only within their own department.
+3.  **EMPLOYEE**
+    *   **Visibility**: Sees content tagged for `EMPLOYEE` that is either scoped to their `department_slug` or marked fully Global (no assigned departments).
     *   **Abilities**: Read-only learner access to available modules.
-5.  **CLIENT**
-    *   **Visibility**: Strict organization wall. Client only sees modules specifically linked to their OS `org_id` via `module_client_orgs`, or globally available Client content.
+4.  **CLIENT**
+    *   **Visibility**: Strict organization wall. Clients only see modules designated for the `CLIENT` role that are specifically linked to their OS `org_id` via `module_client_orgs`, or globally available Client content lacking specific organizational tags.
     *   **Abilities**: Read-only learner access.
 
 ### Filtering Logic Snippet (from `get_modules`)
