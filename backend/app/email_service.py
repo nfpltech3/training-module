@@ -86,7 +86,7 @@ def send_content_notification_emails(content_id: str, uploader_id: str) -> None:
             f"Module: {module.title}\n"
             f"Added by: {uploader.full_name}\n\n"
             f"Please log in to review the material here:\n"
-            f"http://os.int.nagarkot.co.in/\n\n"
+            f"http://trainings.int.nagarkot.co.in/\n\n"
             f"Regards,\n"
             f"Nagarkot Training Platform"
         )
