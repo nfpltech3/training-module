@@ -71,7 +71,7 @@ def send_content_notification_emails(content_id: str, uploader_id: str) -> None:
 
         msg = EmailMessage()
         msg["Subject"] = f"New Training Assigned: {content.title}"
-        msg["From"] = "Nagarkot Training Platform <Crm5@nagarkot.co.in>"
+        msg["From"] = f"Nagarkot Training Platform <{SMTP_USER}>"
         msg["To"] = SMTP_USER
         msg["Bcc"] = ", ".join(recipients)
         msg["Reply-To"] = uploader.company_email or uploader.email
