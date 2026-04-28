@@ -332,7 +332,8 @@ def login(
 
     # Re-query with role joined so all UserResponse fields are present
     user = db.query(models.User).options(
-        joinedload(models.User.role)
+        joinedload(models.User.role),
+        joinedload(models.User.department),
     ).filter(models.User.id == user.id).first()
 
     return {
@@ -348,6 +349,7 @@ def login(
             "role": {"id": user.role.id, "name": user.role.name},
             "is_app_admin": user.is_app_admin,
             "department_slug": user.department_slug,
+            "department": {"id": user.department.id, "slug": user.department.slug, "name": user.department.name} if user.department else None,
             "org_id": user.org_id,
             "status": user.status,
             "is_active": user.is_active,

@@ -66,6 +66,12 @@ class User(Base):
 
     full_name = Column(String, nullable=False)         # Read-only cache
     department_slug = Column(String, nullable=True)    # Read-only cache from OS
+    department = relationship(
+        "Department",
+        primaryjoin="foreign(User.department_slug) == Department.slug",
+        uselist=False,
+        viewonly=True,
+    )
     org_id = Column(String, nullable=True)             # Read-only cache from OS (client org)
     is_app_admin = Column(Boolean, default=False)      # Read-only cache from OS
     

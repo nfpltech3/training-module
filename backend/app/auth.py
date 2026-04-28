@@ -12,7 +12,7 @@ from typing import Optional
 
 from fastapi import Cookie, Depends, Header, HTTPException, Response, status
 from jose import JWTError, jwt
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from .database import get_db
 from . import models
@@ -84,7 +84,10 @@ def get_current_user(
     except JWTError:
         raise credentials_exception
 
-    user = db.query(models.User).filter(models.User.id == user_id).first()
+    user = db.query(models.User).options(
+        joinedload(models.User.role),
+        joinedload(models.User.department),
+    ).filter(models.User.id == user_id).first()
     if user is None or not user.is_active:
         raise credentials_exception
 

@@ -25,6 +25,16 @@ class RoleResponse(BaseModel):
         from_attributes = True
 
 
+# --- Department Schemas ---
+class DepartmentResponse(BaseModel):
+    id: str
+    slug: str
+    name: str
+
+    class Config:
+        from_attributes = True
+
+
 # --- User Schemas ---
 class AdminUserUpdate(BaseModel):
     # Training Admins can only edit these two fields now
@@ -38,6 +48,7 @@ class UserResponse(BaseModel):
     email: EmailStr
     full_name: str
     department_slug: Optional[str] = None
+    department: Optional[DepartmentResponse] = None
     org_id: Optional[str] = None
     is_app_admin: bool
     role_id: str
