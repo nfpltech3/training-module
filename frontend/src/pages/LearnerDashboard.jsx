@@ -117,7 +117,7 @@ export default function LearnerDashboard() {
                             Welcome back, {firstName}!
                         </h1>
                         <p className="text-slate-500 text-lg">
-                            Click on any card below to start or resume your training. <span className="font-semibold text-slate-700">It only takes a few minutes to make progress!</span>
+                            These are the trainings assigned to you. Complete them one by one.
                         </p>
                     </div>
                 </div>
