@@ -33,6 +33,8 @@ out/
 # OS Data
 .DS_Store
 Thumbs.db
+OS/
+OS_old/
 
 # User Uploads
 backend/uploads/

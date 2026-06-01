@@ -199,3 +199,41 @@ Frontend stores JWT in a cookie → user is logged in
 3. Generate a strong `SECRET_KEY` (minimum 32 random characters). Do **not** reuse the dev key.
 4. The `INTERNAL_API_KEY` must be identical on both the OS and Trainings servers.
 5. Ensure the OS server allows your Trainings domain in its CORS / redirect origins.
+
+---
+
+## 🧹 Deleting Orphaned Users
+
+Normally, when a user is deleted in the Nagarkot OS, a webhook (`user.deleted`) is sent to the Trainings backend to automatically remove the user and all their progress data.
+
+However, if the Trainings backend is down or unreachable when the user is deleted from the OS, the user becomes an **"orphaned user"** (they exist in the Trainings database but not in the OS).
+
+You can manually clean up orphaned users using the provided Python script.
+
+### Using the Python Script (Direct DB Deletion)
+This is the safest and most direct method, especially in production. It connects directly to the PostgreSQL database, cascade-deletes the user and all their progress records, and requires email confirmation.
+
+**Running locally:**
+```bash
+cd backend
+venv\Scripts\activate
+
+# 1. Preview what will be deleted (Dry Run)
+python delete_user.py --email "user@example.com" --dry-run
+
+# 2. Actually delete the user
+python delete_user.py --email "user@example.com"
+```
+
+**Running in Production (e.g., Dokploy):**
+1. Open your Dokploy dashboard.
+2. Go to your Project -> Trainings Backend application.
+3. Open the **Terminal** tab for the backend container.
+4. Run the script directly (the Docker container already has Python configured and the `DATABASE_URL` environment variable set):
+```bash
+# Dry run
+python delete_user.py --email "user@example.com" --dry-run
+
+# Actual deletion
+python delete_user.py --email "user@example.com"
+```

@@ -525,35 +525,6 @@ def admin_update_user(
 
     return db_user
 
-
-@app.delete("/admin/users/{user_id}")
-def admin_delete_user(
-    user_id: str,
-    db: Session = Depends(get_db),
-    admin: models.User = Depends(require_admin),
-):
-    """Hard-delete an orphaned user from the training DB.
-
-    Useful when a user was removed from OS but the webhook failed,
-    leaving a stale row in the trainings database.
-    UserProgress rows are cascade-deleted by the FK constraint.
-    """
-    if user_id == admin.id:
-        raise HTTPException(status_code=400, detail="You cannot delete your own account")
-
-    db_user = db.query(models.User).filter(models.User.id == user_id).first()
-    if not db_user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    email = db_user.email
-    os_user_id = db_user.os_user_id
-    db.delete(db_user)
-    db.commit()
-
-    print(f"[Admin] Hard-deleted user {user_id} (os_user_id={os_user_id}, email={email})")
-    return {"status": "ok", "action": "hard_deleted", "user_id": user_id, "email": email}
-
-
 # =====================================================================
 #  MODULES
 # =====================================================================

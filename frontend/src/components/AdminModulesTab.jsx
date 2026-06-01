@@ -141,16 +141,21 @@ export default function AdminModulesTab() {
     const fetchInitialData = async () => {
         try {
             setLoading(true);
-            const [modRes, deptRes, clientRes, rolesRes, settingsRes] = await Promise.all([
+
+            // Fire background fetch for client orgs (doesn't block)
+            getClientOrganizations()
+                .then(res => setClientOrgs(res.data))
+                .catch(err => console.error('Failed to load client orgs:', err));
+
+            // Block only on the fast internal endpoints
+            const [modRes, deptRes, rolesRes, settingsRes] = await Promise.all([
                 getAdminModules(), 
                 getAssignableDepartments(), 
-                getClientOrganizations(),
                 getRoles(),
                 getVideoLimit()
             ]);
             setModules(modRes.data);
             setDepartments(deptRes.data);
-            setClientOrgs(clientRes.data);
             setRoles(rolesRes.data);
             if (settingsRes.data != null && settingsRes.data.value != null) {
                 setVideoMaxDurationSeconds(settingsRes.data.value);

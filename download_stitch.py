@@ -1,0 +1,3 @@
+import urllib.request
+url = "https://contribution.usercontent.google.com/download?c=CgthaWRhX2NvZGVmeBJ8Eh1hcHBfY29tcGFuaW9uX2dlbmVyYXRlZF9maWxlcxpbCiVodG1sX2U1YWEwNDhmYWRlYzQwODc4Mjg4ODkxN2QwNWZjNzE1EgsSBxDP0ZGF1hQYAZIBJAoKcHJvamVjdF9pZBIWQhQxMDYzMTUxNzA1MTY1NTU1MzM0Nw&filename=&opi=89354086"
+urllib.request.urlretrieve(url, "scratch_stitch_design.html")

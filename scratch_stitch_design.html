@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Nagarkot Learning | Dashboard</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Manrope:wght@600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "primary-container": "#0f4c81",
+                        "on-tertiary-container": "#39d377",
+                        "secondary": "#575f6b",
+                        "on-error-container": "#93000a",
+                        "outline": "#727780",
+                        "tertiary": "#003c1b",
+                        "tertiary-container": "#00562a",
+                        "inverse-on-surface": "#eaf1ff",
+                        "surface-container-lowest": "#ffffff",
+                        "on-primary-container": "#8ebdf9",
+                        "primary-fixed": "#d2e4ff",
+                        "surface-tint": "#2d6197",
+                        "surface-dim": "#cbdbf5",
+                        "surface-container-high": "#dce9ff",
+                        "tertiary-fixed-dim": "#4ae183",
+                        "on-tertiary": "#ffffff",
+                        "on-secondary-fixed": "#141c26",
+                        "outline-variant": "#c2c7d1",
+                        "on-secondary-container": "#5d6571",
+                        "error": "#ba1a1a",
+                        "on-surface": "#0b1c30",
+                        "surface-container-highest": "#d3e4fe",
+                        "surface": "#f8f9ff",
+                        "secondary-fixed-dim": "#bfc7d4",
+                        "secondary-fixed": "#dbe3f1",
+                        "on-tertiary-fixed": "#00210c",
+                        "tertiary-fixed": "#6bfe9c",
+                        "on-primary-fixed": "#001c37",
+                        "primary-fixed-dim": "#a0c9ff",
+                        "inverse-primary": "#a0c9ff",
+                        "on-secondary": "#ffffff",
+                        "primary": "#00355f",
+                        "error-container": "#ffdad6",
+                        "surface-container": "#e5eeff",
+                        "secondary-container": "#dbe3f1",
+                        "inverse-surface": "#213145",
+                        "surface-bright": "#f8f9ff",
+                        "on-primary": "#ffffff",
+                        "on-secondary-fixed-variant": "#3f4752",
+                        "on-background": "#0b1c30",
+                        "surface-variant": "#d3e4fe",
+                        "surface-container-low": "#eff4ff",
+                        "on-primary-fixed-variant": "#07497d",
+                        "on-error": "#ffffff",
+                        "on-tertiary-fixed-variant": "#005228",
+                        "background": "#f8f9ff",
+                        "on-surface-variant": "#42474f"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "stack-lg": "48px",
+                        "stack-md": "24px",
+                        "gutter": "24px",
+                        "margin-page": "32px",
+                        "container-max": "1280px",
+                        "base": "8px",
+                        "stack-sm": "12px"
+                    },
+                    "fontFamily": {
+                        "headline-lg": ["Manrope"],
+                        "body-lg": ["Inter"],
+                        "headline-xl": ["Manrope"],
+                        "headline-md": ["Manrope"],
+                        "headline-sm": ["Manrope"],
+                        "body-sm": ["Inter"],
+                        "body-md": ["Inter"],
+                        "label-md": ["Inter"]
+                    },
+                    "fontSize": {
+                        "headline-lg": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                        "body-lg": ["18px", {"lineHeight": "28px", "fontWeight": "400"}],
+                        "headline-xl": ["40px", {"lineHeight": "48px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                        "headline-md": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
+                        "headline-sm": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
+                        "body-sm": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                        "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                        "label-md": ["12px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600"}]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        body {
+            background-color: #f8f9ff;
+            color: #0b1c30;
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .elevation-1 {
+            box-shadow: 0 4px 20px 0px rgba(0,0,0,0.04);
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #dbe3f1;
+            border-radius: 10px;
+        }
+    </style>
+</head>
+<body class="font-body-md text-body-md selection:bg-primary-fixed-dim selection:text-on-primary-fixed">
+<!-- Top Navigation Bar -->
+<header class="bg-surface-container-lowest fixed top-0 w-full z-50 shadow-[0_4px_20px_0px_rgba(0,0,0,0.04)]">
+<div class="flex justify-between items-center w-full px-margin-page py-4 mx-auto max-w-[1440px]">
+<div class="flex items-center gap-8">
+<span class="font-headline-md text-headline-md font-bold text-primary">Nagarkot Learning</span>
+<nav class="hidden md:flex items-center gap-6">
+<a class="font-body-md text-body-md text-primary font-bold border-b-2 border-primary pb-1" href="#">Dashboard</a>
+<a class="font-body-md text-body-md text-secondary hover:text-primary transition-colors" href="#">Admin Portal</a>
+<a class="font-body-md text-body-md text-secondary hover:text-primary transition-colors" href="#">Reports</a>
+<a class="font-body-md text-body-md text-secondary hover:text-primary transition-colors" href="#">Settings</a>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<div class="flex items-center gap-3 pl-2 border-l border-outline-variant">
+<img alt="User Profile" class="w-8 h-8 rounded-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuATKrdhcwjErrULmPTYr0tdQvbuj0W16f5RkrBx4fnwLBKm_5iTdKN5fieT_H8vXjTF8asYmu0PcwOlvRDXAOoLAXTxmzAXM3DeQrNnwkU07T6iU-NhrpQ6uSZGgmfsbwqr9MU3oXKRAUbqgSBqb-qHHsiKzH2bJva9Rn6drCPWl0GPZknMVHL_mQeQAn70hJPV1VSkVFa0wTyFVUgMqjbbyOHiPel8-6CqXm89zYMfllkpSq3vLnr82F2RYVvL5NKtx5bsG2Vvktc5"/>
+<button class="p-2 rounded-full hover:bg-surface-container-low transition-all active:scale-95">
+<span class="material-symbols-outlined text-secondary">logout</span>
+</button>
+</div>
+</div>
+</div>
+</header>
+<main class="pt-[100px] pb-stack-lg px-margin-page mx-auto max-w-[1440px]">
+<!-- Welcome Header & Stats Grid -->
+<section class="mb-stack-lg">
+<div class="flex flex-col md:flex-row justify-between items-end gap-gutter mb-stack-md">
+<div>
+<h1 class="font-headline-xl text-headline-xl text-on-surface mb-2">Welcome back, Alex</h1>
+<p class="font-body-lg text-body-lg text-secondary">You have 4 training modules to complete this week.</p>
+</div>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-gutter">
+<!-- Assigned Stat -->
+<div class="bg-surface-container-lowest p-stack-md rounded-xl elevation-1 border border-transparent hover:border-primary-fixed-dim transition-all">
+<div class="flex items-center justify-between mb-2">
+<span class="font-label-md text-label-md uppercase tracking-wider text-primary font-bold">Assigned</span>
+<span class="material-symbols-outlined text-primary-container">assignment</span>
+</div>
+<div class="flex items-baseline gap-2">
+<span class="font-headline-lg text-headline-lg text-on-surface">12</span>
+<span class="font-body-sm text-body-sm text-secondary">Modules Total</span>
+</div>
+<div class="mt-4 bg-primary-fixed h-1 w-full rounded-full">
+<div class="bg-primary h-full rounded-full w-full"></div>
+</div>
+</div>
+<!-- Completed Stat -->
+<div class="bg-surface-container-lowest p-stack-md rounded-xl elevation-1 border border-transparent hover:border-tertiary-fixed-dim transition-all">
+<div class="flex items-center justify-between mb-2">
+<span class="font-label-md text-label-md uppercase tracking-wider text-tertiary font-bold">Completed</span>
+<span class="material-symbols-outlined text-on-tertiary-container">check_circle</span>
+</div>
+<div class="flex items-baseline gap-2">
+<span class="font-headline-lg text-headline-lg text-on-surface">08</span>
+<span class="font-body-sm text-body-sm text-secondary">Finished</span>
+</div>
+<div class="mt-4 bg-tertiary-fixed h-1 w-full rounded-full opacity-30">
+<div class="bg-on-tertiary-container h-full rounded-full w-[66%]"></div>
+</div>
+</div>
+<!-- Pending Stat -->
+<div class="bg-surface-container-lowest p-stack-md rounded-xl elevation-1 border border-transparent hover:border-error-container transition-all">
+<div class="flex items-center justify-between mb-2">
+<span class="font-label-md text-label-md uppercase tracking-wider text-on-error-container font-bold">Pending</span>
+<span class="material-symbols-outlined text-error">pending</span>
+</div>
+<div class="flex items-baseline gap-2">
+<span class="font-headline-lg text-headline-lg text-on-surface">04</span>
+<span class="font-body-sm text-body-sm text-secondary">In Progress</span>
+</div>
+<div class="mt-4 bg-error-container h-1 w-full rounded-full">
+<div class="bg-error h-full rounded-full w-[33%]"></div>
+</div>
+</div>
+</div>
+</section>
+<!-- Your Department Section -->
+<section class="mb-stack-lg">
+<header class="mb-gutter">
+<h2 class="font-headline-md text-headline-md text-on-surface">Your Department</h2>
+<p class="font-body-sm text-body-sm text-secondary">Specialized training for the Product Engineering team.</p>
+</header>
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-gutter">
+<!-- Training Card 1 -->
+<div class="bg-surface-container-lowest p-6 rounded-xl elevation-1 flex flex-col justify-between hover:shadow-lg transition-shadow border border-outline-variant/10">
+<div>
+<div class="flex items-start justify-between mb-4">
+<span class="bg-surface-container-low text-primary px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest">In Progress</span>
+<span class="material-symbols-outlined text-secondary text-sm">more_vert</span>
+</div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface mb-2">Advanced React Patterns</h3>
+<p class="font-body-sm text-body-sm text-secondary mb-6 line-clamp-2">Master compound components, render props, and high-performance hooks for enterprise apps.</p>
+</div>
+<div>
+<div class="flex justify-between items-center mb-2">
+<span class="font-label-md text-label-md text-secondary">Progress</span>
+<span class="font-label-md text-label-md text-primary font-bold">75%</span>
+</div>
+<div class="bg-surface-container h-2 w-full rounded-full mb-6">
+<div class="bg-primary h-full rounded-full" style="width: 75%"></div>
+</div>
+<button class="w-full py-3 px-4 bg-primary text-on-primary rounded-lg font-bold transition-all active:scale-95 hover:bg-primary-container">
+                            Continue Training
+                        </button>
+</div>
+</div>
+<!-- Training Card 2 -->
+<div class="bg-surface-container-lowest p-6 rounded-xl elevation-1 flex flex-col justify-between hover:shadow-lg transition-shadow border border-outline-variant/10">
+<div>
+<div class="flex items-start justify-between mb-4">
+<span class="bg-surface-container-low text-primary px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest">New</span>
+<span class="material-symbols-outlined text-secondary text-sm">more_vert</span>
+</div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface mb-2">System Architecture 101</h3>
+<p class="font-body-sm text-body-sm text-secondary mb-6 line-clamp-2">Understanding load balancing, microservices communication, and data consistency models.</p>
+</div>
+<div>
+<div class="flex justify-between items-center mb-2">
+<span class="font-label-md text-label-md text-secondary">Progress</span>
+<span class="font-label-md text-label-md text-primary font-bold">0%</span>
+</div>
+<div class="bg-surface-container h-2 w-full rounded-full mb-6">
+<div class="bg-primary h-full rounded-full" style="width: 0%"></div>
+</div>
+<button class="w-full py-3 px-4 bg-primary text-on-primary rounded-lg font-bold transition-all active:scale-95 hover:bg-primary-container">
+                            Start Training
+                        </button>
+</div>
+</div>
+<!-- Training Card 3 -->
+<div class="bg-surface-container-lowest p-6 rounded-xl elevation-1 flex flex-col justify-between hover:shadow-lg transition-shadow border border-outline-variant/10">
+<div>
+<div class="flex items-start justify-between mb-4">
+<span class="bg-surface-container-low text-primary px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest">Assigned</span>
+<span class="material-symbols-outlined text-secondary text-sm">more_vert</span>
+</div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface mb-2">UI/UX for Developers</h3>
+<p class="font-body-sm text-body-sm text-secondary mb-6 line-clamp-2">Bridge the gap between design and development with better accessibility and layout patterns.</p>
+</div>
+<div>
+<div class="flex justify-between items-center mb-2">
+<span class="font-label-md text-label-md text-secondary">Progress</span>
+<span class="font-label-md text-label-md text-primary font-bold">15%</span>
+</div>
+<div class="bg-surface-container h-2 w-full rounded-full mb-6">
+<div class="bg-primary h-full rounded-full" style="width: 15%"></div>
+</div>
+<button class="w-full py-3 px-4 bg-primary text-on-primary rounded-lg font-bold transition-all active:scale-95 hover:bg-primary-container">
+                            Continue Training
+                        </button>
+</div>
+</div>
+</div>
+</section>
+<!-- Company-Wide Training Section -->
+<section>
+<header class="mb-gutter">
+<h2 class="font-headline-md text-headline-md text-on-surface">Company-Wide Training</h2>
+<p class="font-body-sm text-body-sm text-secondary">Mandatory compliance and professional development courses.</p>
+</header>
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-gutter">
+<!-- Training Card 4 -->
+<div class="bg-surface-container-lowest p-6 rounded-xl elevation-1 flex flex-col justify-between hover:shadow-lg transition-shadow border border-outline-variant/10">
+<div>
+<div class="flex items-start justify-between mb-4">
+<span class="bg-surface-container-low text-primary px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest">Mandatory</span>
+<span class="material-symbols-outlined text-secondary text-sm">more_vert</span>
+</div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface mb-2">Data Privacy 2024</h3>
+<p class="font-body-sm text-body-sm text-secondary mb-6 line-clamp-2">Annual compliance training regarding GDPR, CCPA, and internal data handling protocols.</p>
+</div>
+<div>
+<div class="flex justify-between items-center mb-2">
+<span class="font-label-md text-label-md text-secondary">Progress</span>
+<span class="font-label-md text-label-md text-primary font-bold">40%</span>
+</div>
+<div class="bg-surface-container h-2 w-full rounded-full mb-6">
+<div class="bg-primary h-full rounded-full" style="width: 40%"></div>
+</div>
+<button class="w-full py-3 px-4 bg-primary text-on-primary rounded-lg font-bold transition-all active:scale-95 hover:bg-primary-container">
+                            Continue Training
+                        </button>
+</div>
+</div>
+<!-- Training Card 5 -->
+<div class="bg-surface-container-lowest p-6 rounded-xl elevation-1 flex flex-col justify-between hover:shadow-lg transition-shadow border border-outline-variant/10">
+<div>
+<div class="flex items-start justify-between mb-4">
+<span class="bg-surface-container-low text-primary px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest">Optional</span>
+<span class="material-symbols-outlined text-secondary text-sm">more_vert</span>
+</div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface mb-2">Inclusive Leadership</h3>
+<p class="font-body-sm text-body-sm text-secondary mb-6 line-clamp-2">Developing emotional intelligence and cultural awareness in a global workplace.</p>
+</div>
+<div>
+<div class="flex justify-between items-center mb-2">
+<span class="font-label-md text-label-md text-secondary">Progress</span>
+<span class="font-label-md text-label-md text-primary font-bold">0%</span>
+</div>
+<div class="bg-surface-container h-2 w-full rounded-full mb-6">
+<div class="bg-primary h-full rounded-full" style="width: 0%"></div>
+</div>
+<button class="w-full py-3 px-4 bg-primary text-on-primary rounded-lg font-bold transition-all active:scale-95 hover:bg-primary-container">
+                            Start Training
+                        </button>
+</div>
+</div>
+</div>
+</section>
+</main>
+<!-- Footer -->
+<script>
+        // Simple atmospheric interaction for the dashboard
+        document.querySelectorAll('.training-card').forEach(card => {
+            card.addEventListener('mouseenter', () => {
+                card.classList.add('elevation-2');
+            });
+            card.addEventListener('mouseleave', () => {
+                card.classList.remove('elevation-2');
+            });
+        });
+    </script>
+</body></html>

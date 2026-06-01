@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { getModule, getMyProgress, updateProgress } from '../lib/api';
 import SecureVideoPlayer from '../components/SecureVideoPlayer';
 import SecureDocumentViewer from '../components/SecureDocumentViewer';
-import { ChevronLeft, CheckCircle2, Circle, PlayCircle, FileText, Loader2, AlertCircle, Clock } from 'lucide-react';
+import { ChevronLeft, CheckCircle2, Circle, PlayCircle, FileText, Loader2, AlertCircle, Clock, Lock, ChevronDown } from 'lucide-react';
 
 export default function ModuleViewer() {
     const { moduleId } = useParams();
@@ -15,6 +15,9 @@ export default function ModuleViewer() {
     const [activeItem,    setActiveItem]    = useState(null);
     const [loading,       setLoading]       = useState(true);
     const [error,         setError]         = useState('');
+    
+    // Mobile layout state
+    const [isMobileListExpanded, setIsMobileListExpanded] = useState(false);
 
     // ── Shared timer state (used by both VIDEO and DOCUMENT) ──────────
     const [timeLeft,      setTimeLeft]      = useState(0);
@@ -190,75 +193,50 @@ export default function ModuleViewer() {
     const isActiveItemDone = !!progressMap.get(activeItem?.id)?.is_completed;
 
     return (
-        <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
-
-            {/* Header */}
-            <header className="bg-white border-b border-slate-200 py-4 px-4 shadow-sm sticky top-0 z-40">
-                <div className="max-w-screen-2xl mx-auto flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-4">
+        <div className="min-h-[calc(100vh-64px)] bg-slate-50 font-sans pb-32 md:p-6 lg:p-8 md:pb-6 lg:pb-8">
+            <div className="max-w-[1440px] mx-auto w-full flex flex-col md:flex-row md:gap-6 items-start">
+                
+                {/* Sidebar */}
+                <div className="w-full md:w-[280px] shrink-0 flex flex-col md:gap-4 md:sticky md:top-24">
+                    {/* Module Header */}
+                    <div className="bg-transparent md:bg-white rounded-none md:rounded-xl shadow-none md:shadow-sm border-none md:border border-slate-200 px-4 pt-4 pb-3 md:p-5 flex flex-col gap-3">
                         <button
                             onClick={() => navigate('/')}
-                            className="p-2 -ml-2 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition"
-                            title="Back to Dashboard"
+                            className="flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-900 transition w-fit -ml-1 px-1 py-0.5 rounded"
                         >
-                            <ChevronLeft className="w-6 h-6" />
+                            <ChevronLeft className="w-4 h-4" />
+                            Back
                         </button>
                         <div>
-                            <h1 className="text-xl font-bold text-slate-800 leading-tight">
+                            <h1 className="text-xl md:text-lg font-bold text-slate-800 leading-tight mb-1">
                                 {moduleData?.title}
                             </h1>
-                            <p className="text-sm text-slate-500 hidden sm:block">
+                            <p className="text-xs text-slate-500 font-medium">
                                 {contentItems.length} items
                             </p>
                         </div>
                     </div>
 
-                    {/* Right side: timer / acknowledge — same UI for both VIDEO and DOCUMENT */}
-                    {activeItem && (
-                        <div className="flex items-center gap-3">
-                            {isActiveItemDone ? (
-                                <div className="flex items-center gap-2 bg-green-50 text-green-700 px-4 py-2.5 rounded-xl border border-green-200 text-sm font-bold shadow-sm">
-                                    <CheckCircle2 className="w-5 h-5" />
-                                    Lesson Completed
-                                </div>
-
-                            ) : timeLeft > 0 ? (
-                                <div className="flex items-center gap-3 bg-amber-50 text-amber-700 px-5 py-2.5 rounded-xl border border-amber-200/60 ring-1 ring-amber-100/50 shadow-sm transition-all duration-300">
-                                    <Clock className="w-5 h-5 animate-pulse" />
-                                    <div className="flex flex-col">
-                                        <span className="text-[10px] uppercase font-bold tracking-widest leading-none opacity-60">
-                                            Progress
-                                        </span>
-                                        <span className="text-sm font-extrabold tabular-nums">
-                                            {formatTime(timeLeft)} remaining
-                                        </span>
-                                    </div>
-                                </div>
-
-                            ) : timeLeft === 0 && !isActiveItemDone ? (
-                                <button
-                                    onClick={activeItem.content_type === 'VIDEO' ? handleVideoAcknowledge : handleDocumentAcknowledge}
-                                    className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-extrabold px-6 py-3 rounded-xl transition-all shadow-lg shadow-blue-200 hover:scale-105 active:scale-95"
-                                >
-                                    <CheckCircle2 className="w-5 h-5" />
-                                    Acknowledge & Complete
-                                </button>
-                            ) : null}
+                    {/* Content List - Mobile Collapsible */}
+                    <div className="bg-white rounded-none md:rounded-xl shadow-sm border-y md:border border-slate-200 overflow-hidden md:!block">
+                        {/* Mobile Toggle Row */}
+                        <div 
+                            className="md:hidden flex items-center justify-between p-4 border-l-4 border-blue-600 cursor-pointer bg-white"
+                            onClick={() => setIsMobileListExpanded(!isMobileListExpanded)}
+                        >
+                            <div className="flex-1 truncate pr-4 font-bold text-blue-700 text-sm">
+                                {activeItem?.title}
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                                <span className="text-xs font-medium text-slate-500">
+                                    {contentItems.findIndex(i => i.id === activeItem?.id) + 1} of {contentItems.length}
+                                </span>
+                                <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${isMobileListExpanded ? 'rotate-180' : ''}`} />
+                            </div>
                         </div>
-                    )}
-                </div>
-            </header>
 
-            {/* Main Layout (Sidebar + Player) */}
-            <div className="flex-1 max-w-screen-2xl w-full mx-auto flex flex-col md:flex-row shadow-2xl xl:shadow-none xl:mb-8 rounded-none xl:rounded-2xl overflow-hidden border-x-0 xl:border border-slate-200">
-
-                {/* Sidebar */}
-                <div className="w-full md:w-80 lg:w-96 bg-white border-r border-slate-200 flex flex-col shrink-0 h-64 md:h-[calc(100vh-140px)]">
-                    <div className="p-4 border-b border-slate-100 bg-slate-50 shrink-0">
-                        <h2 className="text-sm font-bold tracking-wider text-slate-500 uppercase">Course Content</h2>
-                    </div>
-                    <div className="flex-1 overflow-y-auto w-full">
-                        <ul className="divide-y divide-slate-100">
+                        {/* List Items */}
+                        <ul className={`${isMobileListExpanded ? 'block' : 'hidden'} md:block divide-y divide-slate-100 max-h-[50vh] md:max-h-[calc(100vh-250px)] overflow-y-auto`}>
                             {contentItems.map((item) => {
                                 const prog     = progressMap.get(item.id);
                                 const isDone   = prog?.is_completed;
@@ -267,29 +245,34 @@ export default function ModuleViewer() {
                                 return (
                                     <li key={item.id}>
                                         <button
-                                            onClick={() => setActiveItem(item)}
-                                            className={`w-full flex items-start text-left p-4 gap-4 transition group ${
+                                            onClick={() => {
+                                                setActiveItem(item);
+                                                setIsMobileListExpanded(false);
+                                            }}
+                                            className={`w-full flex items-start text-left p-4 gap-3 transition group bg-white ${
                                                 isActive
-                                                    ? 'bg-blue-50 border-l-4 border-blue-600'
+                                                    ? 'border-l-4 border-blue-600'
                                                     : 'border-l-4 border-transparent hover:bg-slate-50'
                                             }`}
                                         >
                                             <div className="mt-0.5 shrink-0">
                                                 {isDone
-                                                    ? <CheckCircle2 className="w-5 h-5 text-green-500" />
-                                                    : <Circle className={`w-5 h-5 ${isActive ? 'text-blue-500' : 'text-slate-300 group-hover:text-slate-400'}`} />
+                                                    ? <CheckCircle2 className="w-5 h-5 text-slate-400" />
+                                                    : <Circle className={`w-5 h-5 ${isActive ? 'text-blue-600' : 'text-slate-300 group-hover:text-slate-400'}`} />
                                                 }
                                             </div>
                                             <div className="flex-1">
-                                                <h4 className={`text-sm font-semibold mb-1 ${isActive ? 'text-blue-800' : 'text-slate-700 group-hover:text-slate-900'}`}>
+                                                <h4 className={`text-sm mb-1.5 ${
+                                                    isDone ? 'text-slate-400 font-medium' : 
+                                                    isActive ? 'text-blue-700 font-bold' : 
+                                                    'text-slate-700 font-medium group-hover:text-slate-900'
+                                                }`}>
                                                     {item.title}
                                                 </h4>
-                                                <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium">
-                                                    {item.content_type === 'VIDEO'
-                                                        ? <PlayCircle className="w-3.5 h-3.5" />
-                                                        : <FileText className="w-3.5 h-3.5" />
-                                                    }
-                                                    {item.content_type === 'VIDEO' ? 'Video' : 'Document'}
+                                                <div className="flex items-center">
+                                                    <span className="bg-slate-100 text-slate-500 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded">
+                                                        {item.content_type === 'VIDEO' ? 'Video' : 'Doc'}
+                                                    </span>
                                                 </div>
                                             </div>
                                         </button>
@@ -303,43 +286,115 @@ export default function ModuleViewer() {
                     </div>
                 </div>
 
-                {/* Player */}
-                <div className="flex-1 bg-slate-900 md:bg-slate-100 relative min-h-[500px]">
+                {/* Right Area / Player */}
+                <div className="flex-1 w-full bg-transparent md:bg-white rounded-none md:rounded-xl shadow-none md:shadow-sm border-none md:border md:border-slate-200 overflow-hidden flex flex-col pt-4 md:pt-0">
                     {activeItem ? (
-                        <div className="absolute inset-0 p-0 md:pt-2 md:pb-6 md:px-6 overflow-y-auto flex justify-center">
-                            <div className="w-full max-w-5xl mx-auto">
-                                <div className={activeItem.content_type === 'DOCUMENT' ? 'h-[75vh] w-full' : 'w-full'}>
-                                    {activeItem.content_type === 'VIDEO' ? (
-                                        <SecureVideoPlayer
-                                            key={activeItem.id}
-                                            embedUrl={activeItem.embed_url}
-                                            isAlreadyCompleted={isActiveItemDone}
-                                            initialTime={progressMap.get(activeItem.id)?.furthest_second_watched || 0}
-                                            onProgressUpdate={handleProgressUpdate}
-                                            onDurationReady={handleDurationReady}
-                                            onPlayStateChange={setIsPlaying}
-                                        />
-                                    ) : (
-                                        <SecureDocumentViewer
-                                            key={activeItem.id}
-                                            documentUrl={activeItem.document_url}
-                                            totalDuration={activeItem.total_duration}
-                                            onProgressUpdate={handleProgressUpdate}
-                                            isAlreadyCompleted={isActiveItemDone}
-                                        />
-                                    )}
+                        <>
+                            {/* Title & Desc Above Video */}
+                            <div className="px-4 pb-3 md:p-6 md:px-8 md:border-b md:border-slate-100">
+                                <div className="flex items-center gap-3 mb-1 md:mb-2">
+                                    <h2 className="text-lg md:text-2xl font-semibold md:font-bold text-slate-800">{activeItem.title}</h2>
+                                    <span className="bg-slate-100 text-slate-600 border border-slate-200 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded shrink-0">
+                                        {activeItem.content_type === 'VIDEO' ? 'Video' : 'Doc'}
+                                    </span>
                                 </div>
-
-                                <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mt-4 mx-4 md:mx-0">
-                                    <h2 className="text-xl font-bold text-slate-800">{activeItem.title}</h2>
-                                    {activeItem.description && (
-                                        <p className="mt-2 text-slate-600 text-sm">{activeItem.description}</p>
-                                    )}
-                                </div>
+                                {activeItem.description && (
+                                    <p className="text-slate-500 md:text-slate-600 text-sm">{activeItem.description}</p>
+                                )}
                             </div>
-                        </div>
+
+                            {/* Video / Document Embed */}
+                            <div className={`w-full bg-slate-900 flex items-center justify-center md:mx-0 w-full rounded-none md:rounded-none ${activeItem.content_type === 'DOCUMENT' ? 'h-[75vh]' : 'aspect-video'}`}>
+                                {activeItem.content_type === 'VIDEO' ? (
+                                    <SecureVideoPlayer
+                                        key={activeItem.id}
+                                        embedUrl={activeItem.embed_url}
+                                        isAlreadyCompleted={isActiveItemDone}
+                                        initialTime={progressMap.get(activeItem.id)?.furthest_second_watched || 0}
+                                        onProgressUpdate={handleProgressUpdate}
+                                        onDurationReady={handleDurationReady}
+                                        onPlayStateChange={setIsPlaying}
+                                    />
+                                ) : (
+                                    <SecureDocumentViewer
+                                        key={activeItem.id}
+                                        documentUrl={activeItem.document_url}
+                                        totalDuration={activeItem.total_duration}
+                                        onProgressUpdate={handleProgressUpdate}
+                                        isAlreadyCompleted={isActiveItemDone}
+                                    />
+                                )}
+                            </div>
+
+                            {/* Mark as Complete Footer */}
+                            <div className="fixed bottom-0 left-0 right-0 z-50 md:static p-4 md:p-6 flex flex-row items-center justify-between border-t border-slate-200 bg-white md:bg-slate-100">
+                                <div className="flex items-center gap-2 md:gap-3">
+                                    {isActiveItemDone ? (
+                                        <>
+                                            <div className="md:w-10 md:h-10 md:rounded-full md:bg-green-100 md:border md:border-green-200 flex items-center justify-center shrink-0 hidden sm:flex">
+                                                <CheckCircle2 className="w-4 h-4 md:w-5 md:h-5 text-green-600" />
+                                            </div>
+                                            <div className="flex flex-col">
+                                                <span className="text-base md:text-lg font-medium text-green-700 leading-tight">
+                                                    Lesson Completed
+                                                </span>
+                                                <span className="text-[11px] text-green-600/80 font-medium md:uppercase tracking-wider hidden sm:block">
+                                                    Saved to progress
+                                                </span>
+                                            </div>
+                                        </>
+                                    ) : timeLeft > 0 ? (
+                                        <>
+                                            <div className="md:w-10 md:h-10 md:rounded-full md:bg-white md:border md:border-slate-200 flex items-center justify-center shrink-0 md:shadow-sm hidden sm:flex">
+                                                <Clock className="w-4 h-4 md:w-5 md:h-5 text-blue-600 md:text-slate-800" />
+                                            </div>
+                                            <div className="flex flex-col ml-0">
+                                                <span className="text-base md:text-lg font-medium text-blue-600 md:text-slate-800 leading-tight flex items-center gap-1.5">
+                                                    <Clock className="w-4 h-4 text-blue-600 sm:hidden" />
+                                                    {formatTime(timeLeft)}
+                                                </span>
+                                                <span className="text-xs md:text-[11px] text-slate-500 md:text-slate-500 font-medium normal-case md:uppercase md:tracking-wider">
+                                                    remaining to unlock
+                                                </span>
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <div className="md:w-10 md:h-10 md:rounded-full md:bg-green-100 md:border md:border-green-200 flex items-center justify-center shrink-0 hidden sm:flex">
+                                                <CheckCircle2 className="w-4 h-4 md:w-5 md:h-5 text-green-600" />
+                                            </div>
+                                            <div className="flex flex-col ml-0">
+                                                <span className="text-base md:text-lg font-medium text-green-700 leading-tight">
+                                                    Ready
+                                                </span>
+                                                <span className="text-xs md:text-[11px] text-green-600/80 font-medium normal-case md:uppercase md:tracking-wider">
+                                                    Requirement met
+                                                </span>
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                                <button
+                                    onClick={activeItem.content_type === 'VIDEO' ? handleVideoAcknowledge : handleDocumentAcknowledge}
+                                    disabled={timeLeft > 0 || isActiveItemDone}
+                                    title={!isActiveItemDone && timeLeft > 0 ? `Watch ${formatTime(timeLeft)} more to unlock` : ""}
+                                    className={`flex items-center justify-center gap-2 px-4 md:px-6 h-10 md:h-12 rounded-lg text-sm font-bold transition-all shrink-0 ${
+                                        isActiveItemDone 
+                                            ? 'bg-slate-100 md:bg-transparent text-slate-400 cursor-default border border-transparent'
+                                            : timeLeft === 0
+                                                ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-md hover:shadow-lg active:scale-95'
+                                                : 'bg-white md:bg-white text-slate-400 cursor-not-allowed border border-slate-200 shadow-sm opacity-60 md:opacity-80'
+                                    }`}
+                                    style={{ minWidth: '140px' }}
+                                >
+                                    {!isActiveItemDone && timeLeft > 0 && <Lock className="w-4 h-4" />}
+                                    {isActiveItemDone ? <CheckCircle2 className="w-4 h-4" /> : null}
+                                    {isActiveItemDone ? 'Completed' : 'Mark as complete'}
+                                </button>
+                            </div>
+                        </>
                     ) : (
-                        <div className="absolute inset-0 flex items-center justify-center text-slate-400">
+                        <div className="p-10 flex items-center justify-center text-slate-400 min-h-[500px]">
                             <p>Select a lesson from the sidebar to begin.</p>
                         </div>
                     )}
