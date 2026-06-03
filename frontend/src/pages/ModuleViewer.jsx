@@ -20,7 +20,7 @@ export default function ModuleViewer() {
     const [isMobileListExpanded, setIsMobileListExpanded] = useState(false);
 
     // ── Shared timer state (used by both VIDEO and DOCUMENT) ──────────
-    const [timeLeft,      setTimeLeft]      = useState(0);
+    const [timeLeft,      setTimeLeft]      = useState(null);
     // Video-only: required seconds received from SecureVideoPlayer once duration loads
     const [videoRequired,  setVideoRequired]  = useState(0);
     const [isPlaying,     setIsPlaying]     = useState(false);
@@ -68,7 +68,7 @@ export default function ModuleViewer() {
 
     // ── Reset timer state when active item changes ────────────────────
     useEffect(() => {
-        setTimeLeft(0);
+        setTimeLeft(null);
         setVideoRequired(0);
         setIsPlaying(false);
     }, [activeItem?.id]);
@@ -85,15 +85,19 @@ export default function ModuleViewer() {
 
         if (activeItem.content_type === 'VIDEO') {
             if (videoRequired === 0) return; // duration not loaded yet
-            if (!isPlaying) return; // timer frozen while not playing
+            
+            const remaining = Math.max(0, videoRequired - watchedSeconds);
             
             setTimeLeft(prev => {
-                if (prev === 0) return Math.max(0, videoRequired - watchedSeconds);
+                if (prev === null) return remaining;
                 return prev;
             });
 
+            if (!isPlaying) return; // timer frozen while not playing
+
             const timer = setInterval(() => {
                 setTimeLeft(prev => {
+                    if (prev === null) return remaining;
                     if (prev <= 1) { clearInterval(timer); return 0; }
                     return prev - 1;
                 });
@@ -103,10 +107,12 @@ export default function ModuleViewer() {
         } else {
             const duration = activeItem.total_duration || 30;
             const remaining = Math.max(0, duration - watchedSeconds);
-            setTimeLeft(remaining);
+            
+            setTimeLeft(prev => (prev === null ? remaining : prev));
 
             const timer = setInterval(() => {
                 setTimeLeft(prev => {
+                    if (prev === null) return remaining;
                     if (prev <= 1) { clearInterval(timer); return 0; }
                     return prev - 1;
                 });
@@ -343,6 +349,20 @@ export default function ModuleViewer() {
                                                 </span>
                                             </div>
                                         </>
+                                    ) : timeLeft === null ? (
+                                        <>
+                                            <div className="md:w-10 md:h-10 md:rounded-full md:bg-white md:border md:border-slate-200 flex items-center justify-center shrink-0 md:shadow-sm hidden sm:flex">
+                                                <Loader2 className="w-4 h-4 md:w-5 md:h-5 text-slate-400 animate-spin" />
+                                            </div>
+                                            <div className="flex flex-col ml-0">
+                                                <span className="text-base md:text-lg font-medium text-slate-500 leading-tight">
+                                                    Loading...
+                                                </span>
+                                                <span className="text-xs md:text-[11px] text-slate-400 font-medium normal-case md:uppercase md:tracking-wider">
+                                                    Getting duration
+                                                </span>
+                                            </div>
+                                        </>
                                     ) : timeLeft > 0 ? (
                                         <>
                                             <div className="md:w-10 md:h-10 md:rounded-full md:bg-white md:border md:border-slate-200 flex items-center justify-center shrink-0 md:shadow-sm hidden sm:flex">
@@ -376,7 +396,7 @@ export default function ModuleViewer() {
                                 </div>
                                 <button
                                     onClick={activeItem.content_type === 'VIDEO' ? handleVideoAcknowledge : handleDocumentAcknowledge}
-                                    disabled={timeLeft > 0 || isActiveItemDone}
+                                    disabled={timeLeft === null || timeLeft > 0 || isActiveItemDone}
                                     title={!isActiveItemDone && timeLeft > 0 ? `Watch ${formatTime(timeLeft)} more to unlock` : ""}
                                     className={`flex items-center justify-center gap-2 px-4 md:px-6 h-10 md:h-12 rounded-lg text-sm font-bold transition-all shrink-0 ${
                                         isActiveItemDone 
