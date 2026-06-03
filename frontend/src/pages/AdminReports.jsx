@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, Fragment } from 'react';
 import { getReportSummary, getReportUserDetail, getDepartments } from '../lib/api';
+import { format } from 'date-fns';
 import { useAuth } from '../lib/AuthContext';
 import { Loader2, Search, Filter, AlertCircle, PlayCircle, FileText, CheckCircle2, X } from 'lucide-react';
 
@@ -96,8 +97,8 @@ export default function AdminReports() {
 
             {/* Header */}
             <div className="mb-8">
-                <h1 className="text-3xl font-extrabold text-slate-800 tracking-tight">Employee Progress Reports</h1>
-                <p className="text-slate-500 mt-2 text-lg">
+                <h2 className="text-2xl font-bold text-slate-800">Employee Progress Reports</h2>
+                <p className="text-slate-500 mt-2 text-base">
                     Track completion rates across the organization. Select an employee to view drill-down details.
                 </p>
             </div>
@@ -107,10 +108,10 @@ export default function AdminReports() {
                     <AlertCircle className="w-5 h-5" /> {error}
                 </div>
             ) : (
-                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+                <div className="bg-white rounded-xl border border-gray-200 overflow-hidden flex flex-col">
 
                     {/* Controls Bar */}
-                    <div className="p-5 border-b border-slate-100 bg-slate-50 flex flex-col sm:flex-row gap-4 justify-between items-center shrink-0">
+                    <div className="p-5 border-b border-gray-100 bg-white flex flex-col sm:flex-row gap-4 justify-between items-center shrink-0">
                         <div className="relative w-full sm:w-96">
                             <Search className="w-5 h-5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                             <input
@@ -118,17 +119,16 @@ export default function AdminReports() {
                                 placeholder="Search employees..."
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
-                                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition outline-none text-sm"
+                                className="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition outline-none text-sm"
                             />
                         </div>
 
                         {isAdminRole && departments.length > 1 && (
-                            <div className="flex items-center gap-2 w-full sm:w-auto">
-                                <Filter className="w-5 h-5 text-slate-400 shrink-0" />
+                            <div className="w-full sm:w-auto">
                                 <select
                                     value={selectedDept}
                                     onChange={(e) => setSelectedDept(e.target.value)}
-                                    className="w-full sm:w-56 px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white transition outline-none text-sm font-medium text-slate-700"
+                                    className="w-full sm:w-56 border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none text-slate-700"
                                 >
                                     <option value="">All Departments</option>
                                     {departments.map(d => (
@@ -143,16 +143,16 @@ export default function AdminReports() {
                     <div className="overflow-x-auto w-full flex-1">
                         <table className="w-full text-left border-collapse">
                             <thead>
-                                <tr className="bg-slate-50 border-b border-slate-200 text-xs uppercase tracking-wider text-slate-500 font-bold">
+                                <tr className="bg-white border-b border-gray-200 text-xs uppercase tracking-wider text-slate-500 font-bold">
                                     <th className="p-4 pl-6">Employee Name</th>
                                     <th className="p-4">Department</th>
                                     <th className="p-4 text-center">Assigned Items</th>
                                     <th className="p-4 text-center">Completed</th>
                                     <th className="p-4 text-center">Pending</th>
-                                    <th className="p-4 pl-0">Progress Bar</th>
+                                    <th className="p-4 pl-0">Progress</th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-slate-100 text-sm">
+                            <tbody className="divide-y divide-gray-100 text-sm">
                                 {filteredData.length === 0 ? (
                                     <tr>
                                         <td colSpan="6" className="p-8 text-center text-slate-500">
@@ -162,17 +162,19 @@ export default function AdminReports() {
                                 ) : (
                                     filteredData.map(row => {
                                         const pct = row.total_visible > 0 ? (row.completed / row.total_visible) * 100 : 0;
+                                        const rawDept = departments.find(d => d.slug === row.department_slug)?.name || row.department_slug;
+                                        const displayDept = rawDept ? (rawDept.charAt(0).toUpperCase() + rawDept.slice(1)) : <span className="text-slate-400">—</span>;
                                         return (
                                             <tr
                                                 key={row.user_id}
                                                 onClick={() => handleRowClick(row)}
-                                                className="hover:bg-blue-50/50 cursor-pointer transition group"
+                                                className="hover:bg-slate-50 cursor-pointer transition-colors group"
                                             >
                                                 <td className="p-4 pl-6 font-semibold text-slate-800">{row.full_name}</td>
-                                                <td className="p-4 text-slate-600">{departments.find(d => d.slug === row.department_slug)?.name || row.department_slug || 'N/A'}</td>
+                                                <td className="p-4 text-slate-600">{displayDept}</td>
                                                 <td className="p-4 text-center font-medium text-slate-700">{row.total_visible}</td>
-                                                <td className="p-4 text-center font-bold text-green-600">{row.completed}</td>
-                                                <td className="p-4 text-center font-bold text-amber-500">{row.pending}</td>
+                                                <td className={`p-4 text-center ${row.completed > 0 ? 'font-bold text-green-600' : 'font-medium text-slate-400'}`}>{row.completed}</td>
+                                                <td className={`p-4 text-center ${row.pending > 0 ? 'font-bold text-amber-500' : 'font-medium text-slate-400'}`}>{row.pending}</td>
                                                 <td className="p-4 pr-6">
                                                     <div className="flex items-center gap-3">
                                                         <div className="flex-1 bg-slate-100 rounded-full h-2">
@@ -182,6 +184,7 @@ export default function AdminReports() {
                                                             />
                                                         </div>
                                                         <span className="text-xs font-bold text-slate-500 w-9 text-right">{Math.round(pct)}%</span>
+                                                        <span className="opacity-0 group-hover:opacity-100 text-slate-400 transition-opacity ml-2 w-4">→</span>
                                                     </div>
                                                 </td>
                                             </tr>
@@ -196,23 +199,39 @@ export default function AdminReports() {
 
             {/* Drill-down Modal */}
             {selectedUser && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-12 overflow-y-auto">
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-12 overflow-hidden">
                     {/* Backdrop */}
                     <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={closeModal} />
 
                     {/* Modal Container */}
-                    <div className="relative w-full max-w-4xl bg-slate-50 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-                        <div className="bg-white px-6 py-4 border-b border-slate-200 flex justify-between items-center shrink-0">
-                            <div>
+                    <div className="relative w-full max-w-4xl bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col h-full max-h-[90vh]">
+                        <div className="bg-white px-6 py-5 border-b border-slate-200 flex justify-between items-start shrink-0">
+                            <div className="w-full">
                                 <h3 className="text-xl font-bold text-slate-800">{selectedUser.full_name}'s Progress</h3>
-                                <p className="text-sm text-slate-500">{selectedUser.department_slug || 'N/A'} • {selectedUser.completed} of {selectedUser.total_visible} items completed</p>
+                                <div className="flex flex-col mt-1">
+                                    <p className="text-sm text-slate-500">
+                                        {selectedUser.department_slug ? `${(departments.find(d => d.slug === selectedUser.department_slug)?.name || selectedUser.department_slug).toUpperCase()} • ` : ''}
+                                        {selectedUser.completed} of {selectedUser.total_visible} contents completed
+                                    </p>
+                                    <div className="flex items-center gap-2 mt-2.5 w-full max-w-xs">
+                                        <div className="flex-1 bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                                            <div 
+                                                className="h-full bg-green-500 rounded-full" 
+                                                style={{ width: `${selectedUser.total_visible > 0 ? (selectedUser.completed / selectedUser.total_visible) * 100 : 0}%` }} 
+                                            />
+                                        </div>
+                                        <span className="text-xs font-bold text-slate-500 text-right w-8">
+                                            {Math.round(selectedUser.total_visible > 0 ? (selectedUser.completed / selectedUser.total_visible) * 100 : 0)}%
+                                        </span>
+                                    </div>
+                                </div>
                             </div>
-                            <button onClick={closeModal} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition">
+                            <button onClick={closeModal} className="p-2 -mr-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition shrink-0">
                                 <X className="w-6 h-6" />
                             </button>
                         </div>
 
-                        <div className="flex-1 overflow-y-auto w-full p-6">
+                        <div className="flex-1 overflow-y-auto w-full custom-scrollbar">
                             {userDetailLoading ? (
                                 <div className="flex justify-center py-12">
                                     <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
@@ -220,43 +239,69 @@ export default function AdminReports() {
                             ) : userDetail.length === 0 ? (
                                 <div className="text-center py-12 text-slate-500">No content assigned to this user.</div>
                             ) : (
-                                <div className="bg-white border text-left border-slate-200 rounded-xl overflow-hidden shadow-sm">
-                                    <table className="w-full">
-                                        <thead>
-                                            <tr className="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase">
-                                                <th className="p-3 pl-5">Module</th>
-                                                <th className="p-3">Content Item</th>
+                                <div className="text-left w-full h-full">
+                                    <table className="w-full border-collapse">
+                                        <thead className="sticky top-0 bg-white z-10 shadow-sm border-b border-gray-200">
+                                            <tr className="text-xs font-bold text-slate-500 uppercase">
+                                                <th className="p-3 pl-6">Content Item</th>
                                                 <th className="p-3">Type</th>
                                                 <th className="p-3">Status</th>
                                                 <th className="p-3">Completed On</th>
                                             </tr>
                                         </thead>
-                                        <tbody className="divide-y divide-slate-100 text-sm font-medium">
-                                            {userDetail.map((item, idx) => (
-                                                <tr key={idx} className="hover:bg-slate-50 transition">
-                                                    <td className="p-3 pl-5 text-slate-800">{item.module_title}</td>
-                                                    <td className="p-3 text-slate-700">{item.content_title}</td>
-                                                    <td className="p-3">
-                                                        <span className="flex items-center gap-1.5 text-slate-500 bg-slate-100 px-2.5 py-1 rounded-md text-xs font-bold w-fit">
-                                                            {item.content_type === 'VIDEO' ? <PlayCircle className="w-3.5 h-3.5" /> : <FileText className="w-3.5 h-3.5" />}
-                                                            {item.content_type}
-                                                        </span>
-                                                    </td>
-                                                    <td className="p-3">
-                                                        {item.is_completed ? (
-                                                            <span className="flex items-center gap-1.5 text-green-700 bg-green-50 border border-green-200 px-2.5 py-1 rounded-md text-xs font-bold w-fit">
-                                                                <CheckCircle2 className="w-3.5 h-3.5" />
-                                                                Done
-                                                            </span>
-                                                        ) : (
-                                                            <span className="text-slate-400 text-xs font-semibold px-2">Pending</span>
-                                                        )}
-                                                    </td>
-                                                    <td className="p-3 text-slate-500 text-xs">
-                                                        {item.completed_at ? new Date(item.completed_at).toLocaleDateString() : '—'}
-                                                    </td>
-                                                </tr>
-                                            ))}
+                                        <tbody className="divide-y divide-gray-100 text-sm font-medium">
+                                            {Object.entries(
+                                                userDetail.reduce((acc, item) => {
+                                                    if (!acc[item.module_title]) acc[item.module_title] = [];
+                                                    acc[item.module_title].push(item);
+                                                    return acc;
+                                                }, {})
+                                            ).map(([moduleTitle, items], idx) => {
+                                                const moduleCompleted = items.filter(i => i.is_completed).length;
+                                                return (
+                                                    <Fragment key={idx}>
+                                                        {/* Group Header */}
+                                                        <tr className="bg-slate-50 border-t border-b border-gray-200">
+                                                            <td colSpan="4" className="px-6 py-2.5 text-sm font-semibold text-slate-700">
+                                                                <div className="flex justify-between items-center">
+                                                                    <span>{moduleTitle} <span className="text-slate-400 font-normal ml-1">({items.length} items)</span></span>
+                                                                    <span className="text-xs text-slate-400 font-normal">{moduleCompleted} of {items.length} completed</span>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                        {/* Group Items */}
+                                                        {items.map((item, itemIdx) => (
+                                                            <tr key={itemIdx} className="hover:bg-slate-50 transition-colors">
+                                                                <td className="p-3 pl-6 text-slate-700 font-normal">
+                                                                    <div>{item.content_title}</div>
+                                                                    <div className="text-xs text-slate-400 mt-1">
+                                                                        Added {item.content_created_at ? format(new Date(item.content_created_at), 'd MMM yyyy') : '—'}
+                                                                    </div>
+                                                                </td>
+                                                                <td className="p-3">
+                                                                    <span className="flex items-center gap-1.5 text-slate-500 bg-slate-100 px-2.5 py-1 rounded-md text-[11px] font-bold w-fit uppercase tracking-wider">
+                                                                        {item.content_type === 'VIDEO' ? <PlayCircle className="w-3.5 h-3.5" /> : <FileText className="w-3.5 h-3.5" />}
+                                                                        {item.content_type === 'DOCUMENT' ? 'FILE' : item.content_type}
+                                                                    </span>
+                                                                </td>
+                                                                <td className="p-3">
+                                                                    {item.is_completed ? (
+                                                                        <span className="flex items-center gap-1.5 text-green-600 text-xs font-semibold w-fit">
+                                                                            <CheckCircle2 className="w-4 h-4" />
+                                                                            Completed
+                                                                        </span>
+                                                                    ) : (
+                                                                        <span className="text-slate-400 text-xs font-medium">—</span>
+                                                                    )}
+                                                                </td>
+                                                                <td className="p-3 text-slate-500 text-xs">
+                                                                    {item.completed_at ? new Date(item.completed_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                    </Fragment>
+                                                );
+                                            })}
                                         </tbody>
                                     </table>
                                 </div>

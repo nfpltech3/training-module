@@ -11,6 +11,8 @@ __pycache__/
 # Database
 nagarkot.db
 nagarkot.db-journal
+training.db
+*.db
 *.sqlite3
 
 # Environment Variables

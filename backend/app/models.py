@@ -2,6 +2,7 @@ import uuid
 import enum
 from datetime import datetime
 from sqlalchemy import Column, String, Boolean, Integer, ForeignKey, DateTime, Enum, Text, Table, UniqueConstraint
+from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from .database import Base
 
@@ -101,7 +102,8 @@ class Module(Base):
     
     sequence_index = Column(Integer, default=0)
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
     content_items = relationship(
         "Content", back_populates="module",
@@ -122,7 +124,8 @@ class Content(Base):
     sequence_index = Column(Integer, default=0)
     total_duration = Column(Integer, nullable=True)  
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
 class UserProgress(Base):
     __tablename__ = "user_progress"

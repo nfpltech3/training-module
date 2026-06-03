@@ -55,8 +55,23 @@ export default function LearnerDashboard() {
         return { total, completed, pct: Math.round(pct), isCompleted: total > 0 && completed === total };
     };
 
-    const companyWide = modules.filter(m => !m.department_slugs || m.department_slugs.length === 0);
-    const deptSpecific = modules.filter(m => m.department_slugs && m.department_slugs.length > 0);
+    const sortModules = (moduleList) => {
+        return [...moduleList].sort((a, b) => {
+            const statsA = getModuleStats(a);
+            const statsB = getModuleStats(b);
+            
+            const getSortValue = (stats) => {
+                if (stats.pct > 0 && stats.pct < 100) return 0; // In Progress
+                if (stats.pct === 0) return 1; // Not Started
+                return 2; // Fully Completed
+            };
+
+            return getSortValue(statsA) - getSortValue(statsB);
+        });
+    };
+
+    const companyWide = sortModules(modules.filter(m => !m.department_slugs || m.department_slugs.length === 0));
+    const deptSpecific = sortModules(modules.filter(m => m.department_slugs && m.department_slugs.length > 0));
 
     const totalModulesAssigned = modules.length;
     const totalContentsAssigned = modules.reduce((acc, m) => acc + (m.content_items?.length || 0), 0);
@@ -100,9 +115,9 @@ export default function LearnerDashboard() {
                 <div>
                     <div className="flex justify-between items-center mb-2">
                         <span className="font-label-md text-label-md text-secondary">
-                            Progress • {completed} of {total} items
+                            Progress
                         </span>
-                        <span className="font-label-md text-label-md text-primary font-bold">{pct}%</span>
+                        <span className="font-label-md text-label-md text-secondary font-bold">{completed}/{total}</span>
                     </div>
                     <div className="bg-surface-container h-2 w-full rounded-full mb-6">
                         <div className="bg-primary h-full rounded-full" style={{ width: `${pct}%` }}></div>
@@ -127,14 +142,14 @@ export default function LearnerDashboard() {
     }
 
     return (
-        <div className="pt-stack-md pb-stack-lg px-4 sm:px-6 md:px-margin-page mx-auto max-w-[1440px]">
+        <div className="pt-8 md:pt-6 pb-stack-lg px-4 sm:px-6 md:px-margin-page mx-auto max-w-[1440px]">
             {/* Welcome Header & Stats Grid */}
             <section className="mb-stack-lg">
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-gutter mb-6">
                     <div>
                         <h1 className="font-headline-xl text-2xl md:text-headline-xl text-on-surface mb-1 md:mb-2">Welcome back, {firstName}</h1>
                         <p className="font-body-lg text-sm md:text-body-lg text-secondary">
-                            {totalContentsCompleted} of {totalContentsAssigned} contents done across {totalModulesAssigned} modules — keep it up.
+                            {totalContentsCompleted === 0 ? "Ready to learn something new today?" : "Let's dive back into your training journey."}
                         </p>
                     </div>
                 </div>
@@ -147,30 +162,30 @@ export default function LearnerDashboard() {
                 )}
 
                 {/* KPI Stats — Single Compact Row */}
-                <div className="bg-surface-container-lowest p-4 sm:p-5 rounded-xl elevation-1 border border-outline-variant/30 mb-8">
-                    <div className="flex flex-col lg:flex-row items-center justify-between gap-6 lg:gap-8">
+                <div className="bg-surface-container-lowest px-3 py-3 md:p-5 rounded-xl elevation-1 border border-outline-variant/30 mb-8">
+                    <div className="flex flex-col lg:flex-row items-center justify-between gap-4 lg:gap-8">
                         
                         {/* 3 Stats with dividers */}
                         <div className="grid grid-cols-3 divide-x divide-outline-variant/30 w-full lg:flex lg:w-auto">
                             {/* Assigned */}
-                            <div className="flex flex-col items-center justify-center p-2 sm:p-3 lg:py-0 lg:pl-6 lg:px-10">
+                            <div className="flex flex-col items-center justify-center py-2 lg:py-0 lg:pl-6 lg:px-10">
                                 <span className="material-symbols-outlined text-secondary text-[18px] lg:text-[22px] mb-1 lg:mb-1.5">assignment</span>
                                 <span className="font-headline-lg text-2xl lg:text-3xl text-on-surface leading-none mb-1">{totalContentsAssigned}</span>
-                                <span className="font-label-md text-[9px] lg:text-[11px] uppercase tracking-wider font-bold text-secondary text-center">Assigned</span>
+                                <span className="font-label-md text-[11px] uppercase tracking-wider font-bold text-secondary text-center">Assigned</span>
                             </div>
                             
                             {/* Completed */}
-                            <div className="flex flex-col items-center justify-center p-2 sm:p-3 lg:py-0 lg:px-6">
+                            <div className="flex flex-col items-center justify-center py-2 lg:py-0 lg:px-6">
                                 <span className="material-symbols-outlined text-tertiary text-[18px] lg:text-[22px] mb-1 lg:mb-1.5">check_circle</span>
                                 <span className="font-headline-lg text-2xl lg:text-3xl text-on-surface leading-none mb-1">{totalContentsCompleted}</span>
-                                <span className="font-label-md text-[9px] lg:text-[11px] uppercase tracking-wider font-bold text-tertiary text-center">Completed</span>
+                                <span className="font-label-md text-[11px] uppercase tracking-wider font-bold text-tertiary text-center">Completed</span>
                             </div>
 
                             {/* Remaining */}
-                            <div className="flex flex-col items-center justify-center p-2 sm:p-3 lg:py-0 lg:px-10 lg:pr-6">
+                            <div className="flex flex-col items-center justify-center py-2 lg:py-0 lg:px-10 lg:pr-6">
                                 <span className="material-symbols-outlined text-amber-600 text-[18px] lg:text-[22px] mb-1 lg:mb-1.5">schedule</span>
                                 <span className="font-headline-lg text-2xl lg:text-3xl text-on-surface leading-none mb-1">{totalContentsRemaining}</span>
-                                <span className="font-label-md text-[9px] lg:text-[11px] uppercase tracking-wider font-bold text-amber-600 text-center">Remaining</span>
+                                <span className="font-label-md text-[11px] uppercase tracking-wider font-bold text-amber-600 text-center">Remaining</span>
                             </div>
                         </div>
 
@@ -178,7 +193,7 @@ export default function LearnerDashboard() {
                         <div className="hidden lg:block w-px h-16 bg-outline-variant/30"></div>
 
                         {/* Progress Bar & Milestone */}
-                        <div className="w-full lg:flex-1 lg:max-w-[400px] pt-4 lg:pt-0 border-t border-outline-variant/30 lg:border-t-0">
+                        <div className="w-full lg:flex-1 lg:max-w-[400px] pt-3 lg:pt-0 border-t border-outline-variant/30 lg:border-t-0 px-3 py-2 lg:p-0">
                             <div className="flex items-center justify-between mb-2">
                                 <div className="flex items-center gap-1.5 text-secondary">
                                     <span className="material-symbols-outlined text-[16px] text-tertiary">workspace_premium</span>
@@ -186,7 +201,7 @@ export default function LearnerDashboard() {
                                 </div>
                                 <span className="font-label-md text-xs font-bold text-tertiary">{contentsCompletedPct}%</span>
                             </div>
-                            <div className="w-full bg-surface-container-high h-2 rounded-full overflow-hidden flex">
+                            <div className="w-full bg-surface-container-high h-[2px] md:h-2 rounded-full overflow-hidden flex">
                                 <div className="bg-tertiary h-full transition-all duration-500" style={{ width: `${contentsCompletedPct}%` }}></div>
                             </div>
                         </div>

@@ -93,6 +93,7 @@ class ContentResponse(ContentBase):
     id: str
     is_active: bool
     created_at: datetime
+    updated_at: datetime
 
     class Config:
         from_attributes = True
@@ -132,6 +133,7 @@ class ModuleResponse(BaseModel):
     roles: List[RoleResponse] = []
     is_active: bool
     created_at: datetime
+    updated_at: datetime
     content_items: List['ContentResponse'] = []
 
     class Config:
@@ -180,7 +182,9 @@ class UserDetailedReport(BaseModel):
     user_id: str
     full_name: str
     module_title: str
+    module_created_at: datetime
     content_title: str
+    content_created_at: datetime
     content_type: ContentTypeEnum
     is_completed: bool
     completed_at: Optional[datetime] = None

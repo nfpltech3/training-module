@@ -1180,8 +1180,8 @@ def admin_report_summary(
     for user in users_query.all():
         user_role_name = user.role.name.upper() if user.role else "EMPLOYEE"
 
-        # Mirror the exact same visibility logic used in get_modules for Learner Dashboard view
-        base_query = db.query(func.count(models.Content.id)).join(models.Module).filter(
+        # Build query for visible content IDs
+        visible_content_query = db.query(models.Content.id).join(models.Module).filter(
             models.Module.roles.any(models.Role.name == user_role_name),
             models.Module.is_active == True,
             models.Content.is_active == True
@@ -1191,13 +1191,13 @@ def admin_report_summary(
             pass
         elif user_role_name == "CLIENT":
             if user.org_id:
-                base_query = base_query.filter(
+                visible_content_query = visible_content_query.filter(
                     ~models.Module.client_orgs.any() |
                     models.Module.client_orgs.any(models.ModuleClientOrg.org_id == user.org_id)
                 )
         else:
             if user.department_slug:
-                base_query = base_query.filter(
+                visible_content_query = visible_content_query.filter(
                     (models.Module.departments.any(
                         models.ModuleDepartment.department.has(
                             (models.Department.slug == user.department_slug) &
@@ -1207,13 +1207,14 @@ def admin_report_summary(
                     (~models.Module.departments.any())
                 )
             else:
-                base_query = base_query.filter(~models.Module.departments.any())
+                visible_content_query = visible_content_query.filter(~models.Module.departments.any())
                 
-        visible_content_count = base_query.scalar()
+        visible_content_count = visible_content_query.count()
 
         completed_count = db.query(func.count(models.UserProgress.id)).filter(
             models.UserProgress.user_id == user.id,
-            models.UserProgress.is_completed == True
+            models.UserProgress.is_completed == True,
+            models.UserProgress.content_id.in_(visible_content_query)
         ).scalar()
 
         results.append(schemas.UserSummaryReport(
@@ -1293,7 +1294,9 @@ def admin_report_user_detail(
             user_id=user.id,
             full_name=user.full_name,
             module_title=module.title,
+            module_created_at=module.created_at,
             content_title=content.title,
+            content_created_at=content.created_at,
             content_type=content.content_type,
             is_completed=prog.is_completed if prog else False,
             completed_at=prog.completed_at if prog and prog.is_completed else None,

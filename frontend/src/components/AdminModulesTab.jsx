@@ -1,5 +1,8 @@
+/* eslint-disable no-unused-vars */
+/* eslint-disable react-hooks/exhaustive-deps */
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
+import { differenceInMinutes, format } from 'date-fns';
 import YouTube from 'react-youtube';
 import {
     getAdminModules, createModule, updateModule, moveModule, deleteModule,
@@ -11,10 +14,10 @@ import { useAuth } from '../lib/AuthContext';
 import {
     Plus, Search, Edit2, Trash2, GripVertical,
     Video, FileText,
-    Upload, Loader2, X, CheckCircle2, Clock,
+    Upload, Loader2, X, CheckCircle2, Clock, ChevronLeft,
     BookOpen, Layers, ExternalLink, Eye, RotateCcw, Archive,
     FileSpreadsheet, FileCode, FileJson, FileType, FileBarChart,
-    Mail
+    Mail, MoreHorizontal
 } from 'lucide-react';
 import ModuleFormModal from './ModuleFormModal';
 import SecureDocumentViewer from './SecureDocumentViewer';
@@ -65,7 +68,19 @@ function extractUrlLabel(url) {
     }
 }
 
-export const getVideoId = (url) => {
+const formatItemTime = (createdAt, updatedAt, includeBoth = false) => {
+    if (!createdAt) return '';
+    const created = new Date(createdAt);
+    const updated = updatedAt ? new Date(updatedAt) : created;
+    const addedStr = `Added ${format(created, 'd MMM yyyy')}`;
+    if (differenceInMinutes(updated, created) > 5) {
+        const updatedStr = `Updated ${format(updated, 'd MMM yyyy')}`;
+        return includeBoth ? `${addedStr} • ${updatedStr}` : updatedStr;
+    }
+    return addedStr;
+};
+
+const getVideoId = (url) => {
     try {
         if (!url) return null;
         const urlObj = new URL(url);
@@ -92,6 +107,7 @@ export default function AdminModulesTab() {
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedModuleId, setSelectedModuleId] = useState(null);
     const [selectedModule, setSelectedModule] = useState(null);
+    const [mobileViewMode, setMobileViewMode] = useState('list'); // 'list' | 'detail'
 
     // Module modal state (shared component)
     const [moduleModalMode, setModuleModalMode] = useState(null); // 'create' | 'edit' | null
@@ -126,6 +142,7 @@ export default function AdminModulesTab() {
     const [deleteModuleConfirm, setDeleteModuleConfirm] = useState(null); // { id, title } or null
     const [isDeletingModule, setIsDeletingModule] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
+    const [showModuleMenu, setShowModuleMenu] = useState(false);
 
     // Content preview (for documents)
     const [previewContent, setPreviewContent] = useState(null); // content object or null
@@ -237,6 +254,22 @@ export default function AdminModulesTab() {
             department_slugs: selectedModule.department_slugs || [],
             org_ids: selectedModule.org_ids || [],
             role_ids: selectedModule.roles?.map(r => r.id) || [],
+        });
+    };
+
+    const openEditModuleModalFor = (e, module) => {
+        e.stopPropagation();
+        const isClientModule = module.org_ids?.length > 0;
+        setModuleModalMode('edit');
+        setEditModuleId(module.id);
+        setModuleModalInitial({
+            title: module.title,
+            description: module.description || '',
+            module_type: module.module_type || '',
+            target_audience: isClientModule ? 'CLIENT' : 'EMPLOYEE',
+            department_slugs: module.department_slugs || [],
+            org_ids: module.org_ids || [],
+            role_ids: module.roles?.map(r => r.id) || [],
         });
     };
 
@@ -389,7 +422,7 @@ export default function AdminModulesTab() {
             finalDuration = cachedDur;
         }
 
-        if (contentForm.content_type === 'DOCUMENT' && !uploadFile) {
+        if (contentForm.content_type.startsWith('DOCUMENT') && !uploadFile) {
             setContentValidationError('Please select a file to upload.');
             return;
         }
@@ -400,13 +433,14 @@ export default function AdminModulesTab() {
             let documentUrl = '';
             let duration = contentForm.total_duration;
 
-            if (contentForm.content_type === 'DOCUMENT' && uploadFile) {
+            if (contentForm.content_type.startsWith('DOCUMENT') && uploadFile) {
                 const uploadRes = await uploadDocument(uploadFile);
                 documentUrl = uploadRes.data.document_url;
             }
             
             await createContent({ 
                 ...contentForm, 
+                content_type: contentForm.content_type.startsWith('DOCUMENT') ? 'DOCUMENT' : 'VIDEO',
                 module_id: selectedModuleId, 
                 document_url: documentUrl,
                 total_duration: finalDuration,
@@ -610,10 +644,10 @@ export default function AdminModulesTab() {
 
     // ── Render ────────────────────────────────────────────────────────
     return (
-        <div className="flex flex-col lg:flex-row gap-8 min-h-[700px] animate-in fade-in duration-500">
+        <div className="flex flex-col md:flex-row md:gap-8 min-h-[700px] animate-in fade-in duration-500">
             
             {/* --- SIDEBAR: Module List --- */}
-            <aside className="w-full lg:w-80 shrink-0 space-y-4">
+            <aside className={`w-full lg:w-80 shrink-0 space-y-4 ${mobileViewMode === 'detail' ? 'hidden md:block' : 'block'}`}>
                 <div className="flex items-center justify-between mb-2">
                     <h3 className="font-bold text-slate-800 flex items-center gap-2">
                         <BookOpen className="w-4 h-4 text-blue-600" />
@@ -621,10 +655,11 @@ export default function AdminModulesTab() {
                     </h3>
                     <button 
                         onClick={openCreateModuleModal}
-                        className="p-1.5 bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white rounded-lg transition"
+                        className="hidden md:flex items-center gap-1 px-3 py-2 bg-white border border-slate-200 text-blue-600 hover:bg-blue-50 rounded-2xl text-xs font-bold transition shadow-sm h-[38px]"
                         title="New Module"
                     >
-                        <Plus className="w-4 h-4" />
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>New Module</span>
                     </button>
                 </div>
 
@@ -639,6 +674,15 @@ export default function AdminModulesTab() {
                     />
                 </div>
 
+                {/* Mobile Full-width New Module button */}
+                <button 
+                    onClick={openCreateModuleModal}
+                    className="md:hidden w-full flex items-center justify-center gap-2 py-3 mb-4 bg-white border-2 border-blue-600 text-blue-700 hover:bg-blue-50 font-bold rounded-xl transition active:scale-95"
+                >
+                    <Plus className="w-5 h-5" />
+                    New Module
+                </button>
+
                 <div className="space-y-2 max-h-[600px] overflow-y-auto pr-2 custom-scrollbar">
                     {filteredModules.length === 0 ? (
                         <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200">
@@ -648,28 +692,66 @@ export default function AdminModulesTab() {
                         filteredModules.map(m => (
                             <button
                                 key={m.id}
-                                onClick={() => setSelectedModuleId(m.id)}
-                                className={`w-full text-left p-4 rounded-2xl border transition-all group ${
+                                onClick={() => { setSelectedModuleId(m.id); setMobileViewMode('detail'); }}
+                                className={`w-full text-left p-4 rounded-2xl border transition-all group flex items-center justify-between gap-4 ${
                                     selectedModuleId === m.id 
                                     ? 'bg-blue-600 border-blue-600 shadow-md shadow-blue-200' 
                                     : 'bg-white border-slate-200 hover:border-blue-300 hover:shadow-sm'
                                 }`}
                             >
-                                <div className="flex justify-between items-start mb-1">
-                                    <span className={`text-xs font-bold uppercase tracking-tighter ${selectedModuleId === m.id ? 'text-blue-100' : 'text-slate-400'}`}>
-                                        {MODULE_TYPE_LABELS[m.module_type] || m.module_type}
-                                    </span>
-                                    <Layers className={`w-3.5 h-3.5 ${selectedModuleId === m.id ? 'text-blue-200' : 'text-slate-300'}`} />
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex justify-between items-start mb-1">
+                                        <span className={`text-xs font-bold uppercase tracking-tighter ${selectedModuleId === m.id ? 'text-blue-100' : 'text-slate-400'}`}>
+                                            {MODULE_TYPE_LABELS[m.module_type] || m.module_type}
+                                        </span>
+                                    </div>
+                                    <h4 className={`font-bold text-sm line-clamp-2 leading-tight ${selectedModuleId === m.id ? 'text-white' : 'text-slate-700'}`}>
+                                        {m.title}
+                                    </h4>
+                                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                                        <span className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded ${
+                                            selectedModuleId === m.id ? 'bg-blue-500/50 text-white' : 'bg-slate-100 text-slate-500'
+                                        }`}>
+                                            {m.content_items?.length || 0} items
+                                        </span>
+                                    </div>
+                                    {m.departments && m.departments.length > 0 && (
+                                        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                                            {m.departments.slice(0, 2).map(d => (
+                                                <span key={d.slug} className={`text-[10px] font-bold px-3 py-1 rounded-lg border uppercase tracking-wider ${
+                                                    selectedModuleId === m.id 
+                                                    ? 'bg-white/10 text-white border-white/30' 
+                                                    : 'bg-slate-50 text-slate-600 border-slate-100'
+                                                }`}>
+                                                    {d.name}
+                                                </span>
+                                            ))}
+                                            {m.departments.length > 2 && (
+                                                <span className={`text-[10px] font-bold ${
+                                                    selectedModuleId === m.id ? 'text-blue-200' : 'text-slate-400'
+                                                }`}>
+                                                    +{m.departments.length - 2} more
+                                                </span>
+                                            )}
+                                        </div>
+                                    )}
+                                    <div className="mt-2 text-xs text-slate-400 font-medium">
+                                        {formatItemTime(m.created_at, m.updated_at)}
+                                    </div>
                                 </div>
-                                <h4 className={`font-bold text-sm line-clamp-2 leading-tight ${selectedModuleId === m.id ? 'text-white' : 'text-slate-700'}`}>
-                                    {m.title}
-                                </h4>
-                                <div className="mt-2 flex items-center gap-2">
-                                    <span className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded ${
-                                        selectedModuleId === m.id ? 'bg-blue-500/50 text-white' : 'bg-slate-100 text-slate-500'
-                                    }`}>
-                                        {m.content_items?.length || 0} Items
-                                    </span>
+                                <div className="flex items-center gap-1 shrink-0">
+                                    <div 
+                                        role="button"
+                                        onClick={(e) => openEditModuleModalFor(e, m)}
+                                        className={`p-1.5 transition rounded-lg ${
+                                            selectedModuleId === m.id 
+                                            ? 'text-white hover:bg-blue-500/50' 
+                                            : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100/50'
+                                        }`}
+                                        title="Edit Module"
+                                    >
+                                        <Edit2 className="w-4 h-4" />
+                                    </div>
                                 </div>
                             </button>
                         ))
@@ -678,7 +760,7 @@ export default function AdminModulesTab() {
             </aside>
 
             {/* --- MAIN WORKSPACE: Content Builder --- */}
-            <main className="flex-1 min-w-0">
+            <main className={`flex-1 min-w-0 ${mobileViewMode === 'list' ? 'hidden md:block' : 'block'}`}>
                 {selectedModule ? (
                     <div className="space-y-6">
                         {/* Success Toast */}
@@ -687,75 +769,111 @@ export default function AdminModulesTab() {
                         )}
 
                         {/* Module Header Card */}
-                        <div className="bg-white border border-slate-200 rounded-3xl p-6 md:p-8 shadow-sm">
-                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-6">
-                                <div className="text-left">
-                                    <div className="flex items-center gap-3 mb-2 flex-wrap">
-                                        <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight">{selectedModule.title}</h2>
-                                        <button 
-                                            onClick={openEditModuleModal}
-                                            className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition"
-                                            title="Edit Module"
-                                        >
-                                            <Edit2 className="w-5 h-5" />
-                                        </button>
-                                        <button
-                                            onClick={() => setDeleteModuleConfirm({ id: selectedModule.id, title: selectedModule.title })}
-                                            className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition"
-                                            title="Delete Module"
-                                        >
-                                            <Trash2 className="w-5 h-5" />
-                                        </button>
+                        <div className="bg-white border-y md:border border-slate-200 rounded-none md:rounded-3xl py-6 md:p-8 shadow-sm">
+                            {/* Mobile Nav Header */}
+                            <button 
+                                onClick={() => { setMobileViewMode('list'); setSelectedModuleId(null); }}
+                                className="md:hidden flex items-center gap-1.5 text-slate-500 font-medium mb-4 ml-3 hover:text-slate-800"
+                            >
+                                <ChevronLeft className="w-5 h-5" />
+                                Modules
+                            </button>
+
+                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 md:gap-6 mb-6 px-4 md:px-0">
+                                <div className="text-left w-full md:w-auto">
+                                    <div className="flex items-center justify-start gap-3 mb-2 flex-wrap">
+                                        <h2 className="text-xl md:text-3xl font-bold md:font-extrabold text-slate-900 tracking-tight leading-tight">{selectedModule.title}</h2>
+                                        <div className="flex items-center gap-1 shrink-0 relative">
+                                            <button 
+                                                onClick={openEditModuleModal}
+                                                className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition"
+                                                title="Edit Module"
+                                            >
+                                                <Edit2 className="w-4 h-4 md:w-5 md:h-5" />
+                                            </button>
+                                            <button
+                                                onClick={() => setShowModuleMenu(!showModuleMenu)}
+                                                onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setShowModuleMenu(false); }}
+                                                className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-xl transition relative"
+                                                title="More actions"
+                                            >
+                                                <MoreHorizontal className="w-5 h-5" />
+                                                {showModuleMenu && (
+                                                    <div className="absolute right-0 top-full mt-1 w-40 bg-white border border-slate-200 rounded-xl shadow-lg z-50 overflow-hidden">
+                                                        <div 
+                                                            onMouseDown={(e) => {
+                                                                e.preventDefault(); // Prevent blur from firing before click
+                                                                setShowModuleMenu(false);
+                                                                setDeleteModuleConfirm({ id: selectedModule.id, title: selectedModule.title });
+                                                            }}
+                                                            className="w-full text-left px-4 py-2.5 text-sm font-medium text-red-500 hover:bg-red-50 transition cursor-pointer"
+                                                        >
+                                                            Delete module
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </button>
+                                        </div>
                                     </div>
-                                    <p className="text-slate-500 text-lg max-w-2xl">{selectedModule.description || 'Add a description to tell learners what they will learn.'}</p>
+                                    <p className="text-slate-500 text-sm md:text-lg max-w-2xl">{selectedModule.description || 'Add a description to tell learners what they will learn.'}</p>
                                 </div>
                                 
-                                <div className="flex flex-wrap gap-2 justify-end">
-                                    {selectedModule.roles?.map(r => (
-                                        <span key={r.id} className="px-3 py-1 bg-amber-50 text-amber-700 text-xs font-bold rounded-lg border border-amber-100 uppercase tracking-wider">
-                                            {ROLE_LABELS[r.name] ?? r.name}
-                                        </span>
-                                    ))}
-                                    {selectedModule.org_ids?.length > 0 ? (
-                                        selectedModule.org_ids.map(oid => (
-                                            <span key={oid} className="px-3 py-1 bg-purple-50 text-purple-700 text-xs font-bold rounded-lg border border-purple-100 uppercase tracking-wider">
-                                                Org: {clientOrgs.find(o => o.id === oid)?.name || oid.split('-')[0]}
-                                            </span>
-                                        ))
-                                    ) : (
-                                        selectedModule.department_slugs?.length === 0 ? (
-                                            <span className="px-3 py-1 bg-green-50 text-green-700 text-xs font-bold rounded-lg border border-green-100 uppercase tracking-wider">
-                                                GLOBAL
-                                            </span>
-                                        ) : (
-                                            selectedModule.department_slugs?.map(slug => (
-                                                <span key={slug} className="px-3 py-1 bg-slate-50 text-slate-600 text-xs font-bold rounded-lg border border-slate-100 uppercase tracking-wider">
-                                                    {slug}
+                                <div className="flex flex-wrap gap-6 justify-start md:justify-end items-center">
+                                    {selectedModule.roles?.length > 0 && (
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-xs text-slate-400 font-medium">Roles</span>
+                                            {selectedModule.roles.map(r => (
+                                                <span key={r.id} className="px-3 py-1 bg-amber-50 text-amber-700 text-xs font-bold rounded-lg border border-amber-100 uppercase tracking-wider">
+                                                    {ROLE_LABELS[r.name] ?? r.name}
                                                 </span>
-                                            ))
-                                        )
+                                            ))}
+                                        </div>
+                                    )}
+                                    {((selectedModule.org_ids?.length > 0) || (selectedModule.department_slugs !== undefined)) && (
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-xs text-slate-400 font-medium">Departments</span>
+                                            {selectedModule.org_ids?.length > 0 ? (
+                                                selectedModule.org_ids.map(oid => (
+                                                    <span key={oid} className="px-3 py-1 bg-purple-50 text-purple-700 text-xs font-bold rounded-lg border border-purple-100 uppercase tracking-wider">
+                                                        Org: {clientOrgs.find(o => o.id === oid)?.name || oid.split('-')[0]}
+                                                    </span>
+                                                ))
+                                            ) : (
+                                                selectedModule.department_slugs?.length === 0 ? (
+                                                    <span className="px-3 py-1 bg-green-50 text-green-700 text-xs font-bold rounded-lg border border-green-100 uppercase tracking-wider">
+                                                        GLOBAL
+                                                    </span>
+                                                ) : (
+                                                    selectedModule.department_slugs?.map(slug => (
+                                                        <span key={slug} className="px-3 py-1 bg-slate-50 text-slate-600 text-xs font-bold rounded-lg border border-slate-100 uppercase tracking-wider">
+                                                            {slug}
+                                                        </span>
+                                                    ))
+                                                )
+                                            )}
+                                        </div>
                                     )}
                                 </div>
                             </div>
 
-                            <div className="h-px bg-slate-100 w-full mb-8" />
+                            <div className="h-px bg-slate-100 w-full mb-4 md:mb-8" />
 
                             {/* Add Content Form */}
                             <div className="text-left mb-10">
-                                <h4 className="text-sm font-bold text-slate-800 uppercase tracking-widest mb-4">Add New Content</h4>
+                                <h4 className="text-sm font-semibold text-slate-500 px-4 pb-2 md:px-0 md:mb-4">Add new content</h4>
 
                                 {/* Validation error for content form */}
                                 {contentValidationError && (
-                                    <div className="mb-4 px-4 py-3 bg-rose-50 border border-rose-200 text-rose-700 text-sm font-semibold rounded-2xl flex items-center gap-2">
+                                    <div className="mb-4 mx-4 md:mx-0 px-4 py-3 bg-rose-50 border border-rose-200 text-rose-700 text-sm font-semibold rounded-2xl flex items-center gap-2">
                                         <span className="text-rose-500">⚠</span>
                                         {contentValidationError}
                                     </div>
                                 )}
 
-                                <form onSubmit={handleCreateContent} className="grid grid-cols-1 md:grid-cols-12 gap-4 bg-slate-50 p-6 rounded-2xl border border-slate-100">
-                                    <div className="md:col-span-12 lg:col-span-5">
-                                        <label className="block text-[10px] font-extrabold text-slate-400 uppercase mb-1">
-                                            Title <span className="text-rose-500">*</span>
+                                <form onSubmit={handleCreateContent} className="flex flex-col md:grid md:grid-cols-[3fr_1.5fr_2fr] gap-4 bg-white p-4 mx-4 md:mx-0 md:p-6 rounded-xl border border-gray-200">
+                                    <div className="md:col-span-1">
+                                        <label className="block text-sm font-semibold text-slate-700 mb-1">
+                                            Title <span className="text-red-500">*</span>
                                         </label>
                                         <input 
                                             type="text" value={contentForm.title} 
@@ -764,9 +882,9 @@ export default function AdminModulesTab() {
                                             placeholder="Item Title"
                                         />
                                     </div>
-                                    <div className="md:col-span-6 lg:col-span-3">
-                                        <label className="block text-[10px] font-extrabold text-slate-400 uppercase mb-1">
-                                            Type <span className="text-rose-500">*</span>
+                                    <div className="md:col-span-1">
+                                        <label className="block text-sm font-semibold text-slate-700 mb-1">
+                                            Type <span className="text-red-500">*</span>
                                         </label>
                                         <select 
                                             value={contentForm.content_type}
@@ -774,19 +892,19 @@ export default function AdminModulesTab() {
                                             className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                                         >
                                             <option value="VIDEO">Video</option>
-                                            <option value="DOCUMENT">Document</option>
+                                            <option value="DOCUMENT">File</option>
                                         </select>
                                     </div>
-                                    <div className="md:col-span-6 lg:col-span-4">
-                                        <label className="block text-[10px] font-extrabold text-slate-400 uppercase mb-1">
-                                            {contentForm.content_type === 'VIDEO' ? 'YouTube URL' : 'File'} <span className="text-rose-500">*</span>
+                                    <div className="md:col-span-1">
+                                        <label className="block text-sm font-semibold text-slate-700 mb-1">
+                                            {contentForm.content_type === 'VIDEO' ? 'YouTube URL' : 'File'} <span className="text-red-500">*</span>
                                         </label>
                                         {contentForm.content_type === 'VIDEO' ? (
                                             <input 
                                                 type="url" value={contentForm.embed_url} 
                                                 onChange={e => setContentForm({...contentForm, embed_url: e.target.value})}
                                                 className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                                                placeholder="https://..."
+                                                placeholder="https://youtu.be/..."
                                             />
                                         ) : (
                                             <div className="relative group">
@@ -796,20 +914,19 @@ export default function AdminModulesTab() {
                                                         setUploadFile(file);
                                                         processPdfDuration(file);
                                                     }}
-                                                    accept=".pdf,.docx,.doc,.xlsx,.xls,.csv,.ppt,.pptx,.txt"
                                                     className="absolute inset-0 opacity-0 cursor-pointer z-10"
                                                 />
                                                 <div className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm flex items-center justify-between text-slate-400">
-                                                    <span>{uploadFile ? uploadFile.name : 'Upload File'}</span>
-                                                    <Upload className="w-4 h-4" />
+                                                    <span className="truncate pr-2">{uploadFile ? uploadFile.name : 'Upload file'}</span>
+                                                    <Upload className="w-4 h-4 shrink-0" />
                                                 </div>
                                             </div>
                                         )}
                                     </div>
                                     {/* Description field for content */}
-                                    <div className="md:col-span-12">
-                                        <label className="block text-[10px] font-extrabold text-slate-400 uppercase mb-1">
-                                            Description <span className="text-slate-300">(Optional)</span>
+                                    <div className="md:col-span-3">
+                                        <label className="block text-sm font-semibold text-slate-700 mb-1">
+                                            Description <span className="text-xs font-normal text-slate-400">(Optional)</span>
                                         </label>
                                         <textarea
                                             value={contentForm.description}
@@ -818,22 +935,26 @@ export default function AdminModulesTab() {
                                             className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 text-sm resize-none h-16"
                                         />
                                     </div>
-                                    <div className="md:col-span-12 flex items-center justify-between pt-2">
-                                        <label className="flex items-center gap-2 cursor-pointer select-none group">
-                                            <input
-                                                type="checkbox"
-                                                checked={notifyUsers}
-                                                onChange={e => setNotifyUsers(e.target.checked)}
-                                                className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                                            />
-                                            <Mail className={`w-4 h-4 ${notifyUsers ? 'text-blue-600' : 'text-slate-400'} transition-colors`} />
-                                            <span className={`text-sm font-semibold ${notifyUsers ? 'text-blue-700' : 'text-slate-500'} group-hover:text-blue-600 transition-colors`}>
-                                                Notify users via email
-                                            </span>
-                                        </label>
+                                    <div className="md:col-span-3 md:flex md:items-center md:justify-between md:gap-4 md:pt-2">
+                                        <div className="flex flex-col">
+                                            <label className="flex items-center gap-2 cursor-pointer select-none group">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={notifyUsers}
+                                                    onChange={e => setNotifyUsers(e.target.checked)}
+                                                    className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                                />
+                                                <span className={`text-sm font-semibold ${notifyUsers ? 'text-blue-700' : 'text-slate-500'} group-hover:text-blue-600 transition-colors`}>
+                                                    Notify users via email
+                                                </span>
+                                            </label>
+                                            <p className="text-xs text-slate-400 mt-0.5">
+                                                Sends a notification to all assigned users when this item is published.
+                                            </p>
+                                        </div>
                                         <button 
                                             type="submit" disabled={isCreatingContent}
-                                            className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition flex items-center gap-2 shadow-lg shadow-blue-100 disabled:opacity-50"
+                                            className="w-full md:w-auto px-6 py-3 md:py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition flex justify-center items-center gap-2 shadow-lg shadow-blue-100 disabled:opacity-50 mt-4 md:mt-0"
                                         >
                                             {isCreatingContent ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
                                             Add Item
@@ -844,9 +965,11 @@ export default function AdminModulesTab() {
 
                             {/* Content items list with DND */}
                             <div className="text-left">
-                                <div className="flex items-center justify-between mb-4">
-                                    <h4 className="text-sm font-bold text-slate-800 uppercase tracking-widest">Curriculum Items</h4>
-                                    <span className="text-[10px] font-bold text-slate-400 italic">Drag to reorder items</span>
+                                <div className="flex flex-col mb-3 px-4 md:px-0">
+                                    <h4 className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1">
+                                        CURRICULUM ITEMS
+                                    </h4>
+                                    <span className="text-xs text-slate-400 italic text-right md:text-left">Drag to reorder</span>
                                 </div>
 
                                 <DragDropContext onDragEnd={onDragEnd}>
@@ -859,144 +982,174 @@ export default function AdminModulesTab() {
                                                         <p className="text-slate-400 font-bold">This module has no content yet.</p>
                                                     </div>
                                                 ) : (
-                                                    sortedContentItems.map((item, index) => (
-                                                        <Draggable key={item.id} draggableId={item.id} index={index} isDragDisabled={!item.is_active}>
-                                                            {(provided, snapshot) => (
-                                                                    <div
-                                                                        ref={provided.innerRef}
-                                                                        {...provided.draggableProps}
-                                                                        className={`group flex items-center gap-4 p-4 transition-all ${
-                                                                            snapshot.isDragging 
-                                                                            ? 'bg-white border-blue-500 shadow-xl rounded-2xl ring-4 ring-blue-50' 
-                                                                            : `${item.is_active ? 'bg-white border-slate-200' : 'bg-slate-50/50 border-slate-100 opacity-60'} rounded-2xl hover:border-blue-200 hover:shadow-sm`
-                                                                        } border`}
-                                                                    >
-                                                                        <div {...provided.dragHandleProps} className={`text-slate-300 hover:text-slate-500 transition ${item.is_active ? 'cursor-grab active:cursor-grabbing' : 'cursor-not-allowed'}`}>
-                                                                            <GripVertical className="w-5 h-5" />
-                                                                        </div>
-                                                                        
-                                                                        <div className={`w-8 h-8 rounded-full ${item.is_active ? 'bg-slate-100 text-slate-500' : 'bg-slate-200 text-slate-400'} flex items-center justify-center text-xs font-extrabold shrink-0`}>
-                                                                            {item.is_active ? index + 1 : '—'}
-                                                                        </div>
+                                                    sortedContentItems.flatMap((item, index) => {
+                                                        const isFirstArchived = !item.is_active && (index === 0 || sortedContentItems[index - 1].is_active);
+                                                        const archivedCount = sortedContentItems.filter(i => !i.is_active).length;
+                                                        
+                                                        const elements = [];
+                                                        
+                                                        if (isFirstArchived) {
+                                                            elements.push(
+                                                                <div key="archived-divider" className="flex items-center gap-4 pt-6 pb-2 opacity-60">
+                                                                    <div className="h-px bg-slate-300 flex-1" />
+                                                                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                                                                        Archived · {archivedCount} items
+                                                                    </span>
+                                                                    <div className="h-px bg-slate-300 flex-1" />
+                                                                </div>
+                                                            );
+                                                        }
+                                                        
+                                                        elements.push(
+                                                            <Draggable key={item.id} draggableId={item.id} index={index} isDragDisabled={!item.is_active}>
+                                                                {(provided, snapshot) => (
+                                                                        <div
+                                                                            ref={provided.innerRef}
+                                                                            {...provided.draggableProps}
+                                                                            className={`group mx-4 md:mx-0 flex flex-col md:flex-row p-4 gap-1 md:gap-4 transition-all ${
+                                                                                snapshot.isDragging 
+                                                                                ? 'bg-white border-blue-500 shadow-xl rounded-2xl ring-4 ring-blue-50' 
+                                                                                : `${item.is_active ? 'bg-white border-slate-200' : 'bg-slate-50/50 border-slate-200 opacity-60'} rounded-2xl hover:border-blue-200 hover:shadow-sm`
+                                                                            } border`}
+                                                                        >
+                                                                            {/* Row 1: Number + Icon + Title */}
+                                                                            <div className="flex items-center gap-2 md:gap-4 md:w-auto w-full">
+                                                                                {item.is_active ? (
+                                                                                    <div {...provided.dragHandleProps} className="hidden md:block text-slate-300 hover:text-slate-500 transition cursor-grab active:cursor-grabbing shrink-0">
+                                                                                        <GripVertical className="w-5 h-5" />
+                                                                                    </div>
+                                                                                ) : (
+                                                                                    <div className="w-5 hidden md:block shrink-0" />
+                                                                                )}
+                                                                                
+                                                                                <div className={`w-8 h-8 rounded-full ${item.is_active ? 'bg-slate-100 text-slate-500' : 'bg-slate-200 text-slate-400'} flex items-center justify-center text-xs font-extrabold shrink-0`}>
+                                                                                    {item.is_active ? index + 1 : '—'}
+                                                                                </div>
 
-                                                                    <div className="p-2 rounded-xl shrink-0 bg-slate-50">
-                                                                        {item.content_type === 'VIDEO' ? <Video className="w-5 h-5 text-rose-500" /> : getFileIcon(item.document_url)}
-                                                                    </div>
+                                                                                {!item.is_active && (
+                                                                                    <span className="px-2 py-0.5 rounded border border-slate-200 bg-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-wider shrink-0 md:hidden">
+                                                                                        Archived
+                                                                                    </span>
+                                                                                )}
 
-                                                                    <div className="flex-1 min-w-0 pr-4">
-                                                                        <h5 className="font-bold text-slate-700 text-sm truncate">{item.title}</h5>
-                                                                        <div className="flex items-center gap-2 mt-0.5">
-                                                                            <span className="text-[10px] font-bold text-slate-400 opacity-60 uppercase tracking-wider shrink-0">
-                                                                                {item.content_type === 'VIDEO' ? 'YouTube Video' : getFileLabel(item.document_url)}
-                                                                            </span>
-                                                                            {/* Show the URL / filename */}
-                                                                            {(item.embed_url || item.document_url) && (
-                                                                                <>
+                                                                                <div className="p-2 rounded-xl shrink-0 bg-slate-50">
+                                                                                    {item.content_type === 'VIDEO' ? <Video className="w-5 h-5 text-rose-500" /> : getFileIcon(item.document_url)}
+                                                                                </div>
+
+                                                                                <h5 className="font-semibold text-slate-800 text-sm truncate md:hidden">{item.title}</h5>
+                                                                            </div>
+
+                                                                            {/* Row 2 & 3: Metadata & Description */}
+                                                                            <div className="flex-1 min-w-0 md:pl-2 flex flex-col justify-center">
+                                                                                <div className="hidden md:flex items-center gap-2">
+                                                                                    <h5 className="font-bold text-slate-700 text-sm truncate">{item.title}</h5>
+                                                                                    {!item.is_active && (
+                                                                                        <span className="px-2 py-0.5 rounded border border-slate-200 bg-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-wider shrink-0">
+                                                                                            Archived
+                                                                                        </span>
+                                                                                    )}
+                                                                                </div>
+                                                                                
+                                                                                <div className="flex flex-wrap items-center gap-2 mt-1 md:mt-0.5">
                                                                                     {item.content_type === 'VIDEO' ? (
-                                                                                        <>
-                                                                                            <span className="text-slate-200">·</span>
-                                                                                            <div className="flex items-center gap-2 overflow-hidden flex-wrap">
+                                                                                        item.embed_url && (
+                                                                                            <div className="flex items-center gap-2 overflow-hidden flex-wrap w-full md:w-auto">
                                                                                                 <a 
                                                                                                     href={item.embed_url} 
                                                                                                     target="_blank" 
                                                                                                     rel="noopener noreferrer"
-                                                                                                    className="text-[10px] text-blue-500 hover:text-blue-700 font-bold truncate max-w-[200px] flex items-center gap-1 transition-colors"
+                                                                                                    className="text-xs md:text-[10px] text-blue-500 hover:text-blue-700 font-medium md:font-bold truncate max-w-[200px] flex items-center gap-1 transition-colors"
                                                                                                     title="Open in YouTube"
                                                                                                 >
                                                                                                     <ExternalLink className="w-3 h-3 shrink-0" />
                                                                                                     {extractUrlLabel(item.embed_url)}
                                                                                                 </a>
                                                                                                 {item.total_duration > 0 && (
-                                                                                                    <span className="flex items-center gap-1 text-[10px] font-bold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded-md ring-1 ring-rose-100 shrink-0">
+                                                                                                    <span className="flex items-center gap-1 text-xs md:text-[10px] font-medium md:font-bold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded-md ring-1 ring-rose-100 shrink-0">
                                                                                                         <Clock className="w-2.5 h-2.5" />
                                                                                                         {Math.floor(item.total_duration / 60)}m {item.total_duration % 60}s
                                                                                                     </span>
                                                                                                 )}
                                                                                             </div>
-                                                                                        </>
-                                                                                    ) : (
-                                                                                        item.total_duration > 0 && (
-                                                                                            <>
-                                                                                                <span className="text-slate-200">·</span>
-                                                                                                <div className="flex items-center gap-2 overflow-hidden flex-wrap">
-                                                                                                    <span className="flex items-center gap-1 text-[10px] font-bold text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded-md ring-1 ring-blue-100 shrink-0">
-                                                                                                        <Clock className="w-2.5 h-2.5" />
-                                                                                                        {Math.floor(item.total_duration / 60)}m {item.total_duration % 60}s lock
-                                                                                                    </span>
-                                                                                                </div>
-                                                                                            </>
                                                                                         )
+                                                                                    ) : (
+                                                                                        <span className="text-xs text-slate-400 uppercase font-medium">{item.content_type === 'DOCUMENT' ? 'FILE' : item.content_type}</span>
                                                                                     )}
-                                                                                </>
-                                                                            )}
-                                                                        </div>
-                                                                        {/* Show description if present */}
-                                                                        {item.description && (
-                                                                            <p className="text-[11px] text-slate-400 mt-1 line-clamp-1">{item.description}</p>
-                                                                        )}
-                                                                    </div>
+                                                                                </div>
 
-                                                                    <div className="flex items-center gap-1 opacity-10 group-hover:opacity-100 transition-opacity">
-                                                                        {item.is_active ? (
-                                                                            <>
-                                                                                {item.content_type === 'DOCUMENT' && (
-                                                                                    <button 
-                                                                                        onClick={() => setPreviewContent(item)}
-                                                                                        className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition"
-                                                                                        title="Preview Document"
-                                                                                    >
-                                                                                        <Eye className="w-4 h-4" />
-                                                                                    </button>
+                                                                                {item.description && (
+                                                                                    <p className="text-xs md:text-[11px] text-slate-400 mt-1 line-clamp-1">{item.description}</p>
                                                                                 )}
-                                                                                <button 
-                                                                                    onClick={() => {
-                                                                                        setEditContentForm({
-                                                                                            id: item.id,
-                                                                                            title: item.title,
-                                                                                            description: item.description || '',
-                                                                                            content_type: item.content_type,
-                                                                                            embed_url: item.embed_url || '',
-                                                                                            document_url: item.document_url || ''
-                                                                                        });
-                                                                                        setUploadFile(null);
-                                                                                        setShowEditContentModal(true);
-                                                                                    }}
-                                                                                    className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition"
-                                                                                    title="Edit Item"
-                                                                                >
-                                                                                    <Edit2 className="w-4 h-4" />
-                                                                                </button>
-                                                                                <button
-                                                                                    onClick={() => handleArchiveContent(item.id)}
-                                                                                    className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
-                                                                                    title="Archive Item"
-                                                                                >
-                                                                                    <Archive className="w-4 h-4" />
-                                                                                </button>
-                                                                            </>
-                                                                        ) : (
-                                                                            <div className="flex items-center gap-1">
-                                                                                <button
-                                                                                    onClick={() => handleUnarchiveContent(item.id)}
-                                                                                    className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition"
-                                                                                    title="Restore Item"
-                                                                                >
-                                                                                    <RotateCcw className="w-4 h-4" />
-                                                                                </button>
-                                                                                <button
-                                                                                    onClick={() => handleDeletePermanently(item.id, item.title)}
-                                                                                    className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
-                                                                                    title="Delete Permanently"
-                                                                                >
-                                                                                    <Trash2 className="w-4 h-4" />
-                                                                                </button>
+                                                                                <p className="text-xs md:text-[10px] text-slate-400 mt-1 font-medium">{formatItemTime(item.created_at, item.updated_at, true)}</p>
                                                                             </div>
-                                                                        )}
-                                                                    </div>
-                                                                </div>
-                                                            )}
+
+                                                                            {/* Action Icons Row */}
+                                                                            <div className="flex justify-end items-center gap-3 mt-2 md:mt-0 shrink-0">
+                                                                                {item.is_active ? (
+                                                                                    <>
+                                                                                        {item.content_type === 'DOCUMENT' && (
+                                                                                            <button 
+                                                                                                onClick={() => setPreviewContent(item)}
+                                                                                                className="text-slate-400 md:text-slate-300 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg p-1.5 md:p-2 transition"
+                                                                                                title="Preview Document"
+                                                                                            >
+                                                                                                <Eye className="w-4 h-4" />
+                                                                                            </button>
+                                                                                        )}
+                                                                                        <button 
+                                                                                            onClick={() => {
+                                                                                                setEditContentForm({
+                                                                                                    id: item.id,
+                                                                                                    title: item.title,
+                                                                                                    description: item.description || '',
+                                                                                                    content_type: item.content_type,
+                                                                                                    embed_url: item.embed_url || '',
+                                                                                                    document_url: item.document_url || '',
+                                                                                                    created_at: item.created_at,
+                                                                                                    updated_at: item.updated_at
+                                                                                                });
+                                                                                                setUploadFile(null);
+                                                                                                setShowEditContentModal(true);
+                                                                                            }}
+                                                                                            className="text-slate-400 md:text-slate-300 hover:text-slate-600 hover:bg-slate-100 rounded-lg p-1.5 md:p-2 transition"
+                                                                                            title="Edit"
+                                                                                        >
+                                                                                            <Edit2 className="w-4 h-4" />
+                                                                                        </button>
+                                                                                        <button
+                                                                                            onClick={() => handleArchiveContent(item.id)}
+                                                                                            className="text-slate-400 md:text-amber-500 opacity-100 md:opacity-0 md:group-hover:opacity-100 hover:bg-amber-50 rounded-lg p-1.5 md:p-2 transition"
+                                                                                            title="Archive"
+                                                                                        >
+                                                                                            <Archive className="w-4 h-4" />
+                                                                                        </button>
+                                                                                    </>
+                                                                                ) : (
+                                                                                    <div className="flex items-center gap-3 md:gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity w-full justify-end">
+                                                                                        <button
+                                                                                            onClick={() => handleUnarchiveContent(item.id)}
+                                                                                            className="text-slate-400 md:text-green-600 hover:bg-green-50 rounded-lg p-1.5 md:p-2 transition flex items-center gap-1"
+                                                                                            title="Restore"
+                                                                                        >
+                                                                                            <RotateCcw className="w-4 h-4" />
+                                                                                            <span className="text-xs font-semibold md:hidden">Restore</span>
+                                                                                        </button>
+                                                                                        <button
+                                                                                            onClick={() => handleDeletePermanently(item.id, item.title)}
+                                                                                            className="text-slate-400 md:text-red-500 hover:bg-red-50 rounded-lg p-1.5 md:p-2 transition"
+                                                                                            title="Delete permanently"
+                                                                                        >
+                                                                                            <Trash2 className="w-4 h-4" />
+                                                                                        </button>
+                                                                                    </div>
+                                                                                )}
+                                                                            </div>
+                                                                        </div>
+                                                                    )}
                                                         </Draggable>
-                                                    ))
+                                                    );
+                                                    return elements;
+                                                })
                                                 )}
                                                 {provided.placeholder}
                                             </div>
@@ -1030,19 +1183,23 @@ export default function AdminModulesTab() {
                 departments={departments}
                 clientOrgs={clientOrgs}
                 roles={roles.filter(r => r.name !== 'MANAGER')}
+                disabledRoles={['CLIENT']}
                 roleLabels={ROLE_LABELS}
             />
 
             {/* Edit Content Modal */}
             {showEditContentModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center md:p-4">
                     <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm animate-in fade-in" onClick={() => setShowEditContentModal(false)} />
-                    <div className="bg-white rounded-[32px] shadow-2xl w-full max-w-xl relative z-10 p-8 flex flex-col text-left animate-in zoom-in-95 duration-200">
-                        <div className="flex justify-between items-center mb-6">
-                            <h3 className="text-2xl font-bold text-slate-800">Edit Content</h3>
-                            <button onClick={() => setShowEditContentModal(false)} className="p-2 text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+                    <div className="bg-white rounded-t-2xl md:rounded-[32px] shadow-2xl w-full max-w-xl relative z-10 flex flex-col text-left animate-in slide-in-from-bottom-8 md:zoom-in-95 duration-200 h-[85vh] md:h-auto md:max-h-[90vh] overflow-hidden">
+                        <div className="w-10 h-1 bg-slate-300 rounded-full mx-auto mt-3 mb-4 md:hidden shrink-0" />
+                        <div className="flex justify-between items-center mb-4 md:mb-6 px-4 md:px-8 pt-0 md:pt-8 shrink-0">
+                            <h3 className="text-lg md:text-2xl font-bold text-slate-800">Edit Content</h3>
+                            <button onClick={() => setShowEditContentModal(false)} className="p-2 -mr-2 md:-mr-0 text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
                         </div>
-                        <form onSubmit={handleEditContentSubmit} className="space-y-5">
+                        
+                        <div className="flex-1 overflow-y-auto px-4 md:px-8 pb-4 md:pb-0 custom-scrollbar">
+                            <form id="edit-content-form" onSubmit={handleEditContentSubmit} className="flex flex-col gap-4 md:space-y-5">
                             <div>
                                 <label className="block text-xs font-bold text-slate-400 uppercase tracking-tighter mb-1.5 ml-1 text-left">Title</label>
                                 <input type="text" required value={editContentForm.title} onChange={e => setEditContentForm({ ...editContentForm, title: e.target.value })} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl focus:bg-white focus:ring-4 focus:ring-blue-50 outline-none transition" />
@@ -1082,13 +1239,23 @@ export default function AdminModulesTab() {
                                 </div>
                             )}
 
-                            <div className="pt-4">
-                                <button type="submit" disabled={isEditingContent} className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-extrabold rounded-2xl shadow-xl shadow-blue-200 transition flex items-center justify-center gap-3 disabled:opacity-50">
-                                    {isEditingContent && <Loader2 className="w-5 h-5 animate-spin" />}
-                                    Update Item
-                                </button>
-                            </div>
-                        </form>
+                            </form>
+                        </div>
+                        
+                        <div className="shrink-0 p-4 md:px-8 md:pb-8 bg-white md:bg-transparent border-t border-slate-100 md:border-0">
+                            <button form="edit-content-form" type="submit" disabled={isEditingContent} className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-extrabold rounded-2xl shadow-xl shadow-blue-200 transition flex items-center justify-center gap-3 disabled:opacity-50 mb-4">
+                                {isEditingContent && <Loader2 className="w-5 h-5 animate-spin" />}
+                                Update Item
+                            </button>
+                            {editContentForm.created_at && (
+                                <div className="text-xs text-slate-400 text-center leading-relaxed">
+                                    <p>Added {format(new Date(editContentForm.created_at), 'dd MMM yyyy')}</p>
+                                    {editContentForm.updated_at && differenceInMinutes(new Date(editContentForm.updated_at), new Date(editContentForm.created_at)) > 5 && (
+                                        <p>Last updated {format(new Date(editContentForm.updated_at), 'dd MMM yyyy')}</p>
+                                    )}
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
             )}

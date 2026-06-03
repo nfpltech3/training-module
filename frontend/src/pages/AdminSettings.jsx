@@ -54,13 +54,13 @@ export default function AdminSettings() {
     }
 
     return (
-        <div className="max-w-4xl mx-auto px-4 py-10 font-sans">
-            <div className="mb-8">
-                <h1 className="text-3xl font-extrabold flex items-center gap-3 text-slate-800">
-                    <Settings className="w-8 h-8 text-blue-600" />
+        <div className="p-4 md:p-8 md:max-w-4xl md:mx-auto">
+            <div className="mb-8 md:mb-10 text-left">
+                <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
+                    <Settings className="w-5 h-5 text-blue-600" />
                     Platform Settings
                 </h1>
-                <p className="text-slate-500 mt-2">Manage global configurations for the training platform.</p>
+                <p className="text-sm text-slate-500 mt-1">Manage global configurations for the training platform.</p>
             </div>
 
             {error && (
@@ -77,40 +77,38 @@ export default function AdminSettings() {
                 </div>
             )}
 
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-                <h3 className="text-lg font-bold text-slate-800 mb-4 border-b pb-2">Content Restrictions</h3>
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 md:p-6 text-left mx-0 md:mx-auto">
+                <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider border-b border-gray-100 pb-3 mb-5">Content Restrictions</h3>
                 
-                <div className="space-y-6">
-                    <div>
-                        <label className="block font-bold text-slate-700 mb-2">
-                            Maximum YouTube Video Duration
-                        </label>
-                        <p className="text-sm text-slate-500 mb-3">
-                            Any YouTube video linked as module content must be equal to or shorter than this limit. Existing content is not affected.
-                        </p>
-                        <div className="flex items-center gap-3">
-                            <input
-                                type="number"
-                                min="0"
-                                value={videoLimitMinutes}
-                                onChange={(e) => setVideoLimitMinutes(e.target.value.replace(/[^0-9]/g, ''))}
-                                onKeyDown={(e) => { if (['-', 'e', 'E', '+', '.'].includes(e.key)) e.preventDefault(); }}
-                                onWheel={(e) => e.target.blur()}
-                                placeholder="30"
-                                className="w-24 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 text-center font-semibold tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                            />
-                            <span className="text-sm font-medium text-slate-600">minutes</span>
-                        </div>
-                        <p className="text-xs text-slate-400 mt-2">Set to 0 to remove the limit entirely.</p>
+                <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">
+                        Maximum video duration
+                    </label>
+                    <p className="text-sm text-slate-400 mb-4">
+                        Any YouTube video linked as module content must be equal to or shorter than this limit. Existing content is not affected.
+                    </p>
+                    <div className="flex items-center gap-2 mb-1">
+                        <input
+                            type="number"
+                            min="0"
+                            value={videoLimitMinutes}
+                            onChange={(e) => setVideoLimitMinutes(e.target.value.replace(/[^0-9]/g, ''))}
+                            onKeyDown={(e) => { if (['-', 'e', 'E', '+', '.'].includes(e.key)) e.preventDefault(); }}
+                            onWheel={(e) => e.target.blur()}
+                            placeholder="30"
+                            className="w-full md:w-24 px-3 py-2 border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 text-sm text-slate-900 text-center transition [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                        />
+                        <span className="text-sm text-slate-500 shrink-0">minutes</span>
                     </div>
+                    <p className="text-xs text-slate-400 mt-1">Set to 0 to remove the limit.</p>
 
-                    <div className="pt-4 flex justify-end">
+                    <div className="mt-6 flex justify-start md:justify-end">
                         <button
                             onClick={handleSave}
                             disabled={saving}
-                            className="flex items-center gap-2 bg-blue-600 text-white font-bold py-2.5 px-6 rounded-xl hover:bg-blue-700 transition disabled:opacity-50"
+                            className="w-full md:w-auto flex items-center justify-center gap-2 bg-blue-600 text-white font-bold py-2.5 px-6 rounded-xl hover:bg-blue-700 transition disabled:opacity-50"
                         >
-                            {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
+                            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                             Save Settings
                         </button>
                     </div>
