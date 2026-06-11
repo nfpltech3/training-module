@@ -644,7 +644,7 @@ export default function AdminModulesTab() {
 
     // ── Render ────────────────────────────────────────────────────────
     return (
-        <div className="flex flex-col md:flex-row md:gap-8 min-h-[700px] animate-in fade-in duration-500">
+        <div className="flex flex-col md:flex-row md:gap-8 min-h-[700px]">
             
             {/* --- SIDEBAR: Module List --- */}
             <aside className={`w-full lg:w-80 shrink-0 space-y-4 ${mobileViewMode === 'detail' ? 'hidden md:block' : 'block'}`}>

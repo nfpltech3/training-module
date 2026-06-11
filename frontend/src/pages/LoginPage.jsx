@@ -31,12 +31,8 @@ export default function LoginPage() {
 
             login(user);
 
-            // Redirect based on role (role is an object { name: 'ADMIN' })
-            if (user.role?.name === 'ADMIN') {
-                navigate('/admin', { replace: true });
-            } else {
-                navigate('/', { replace: true });
-            }
+            // Redirect all users to the main dashboard by default
+            navigate('/', { replace: true });
         } catch (err) {
             const detail = err.response?.data?.detail;
             setError(detail || 'Unable to connect. Please try again.');

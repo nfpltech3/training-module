@@ -80,7 +80,7 @@ export default function AdminEmployeesTab() {
                     <thead>
                         <tr className="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-tight">
                             <th className="p-4 pl-6">Full Name & Email</th>
-                            <th className="p-4">OS Department</th>
+                            <th className="p-4">OS Unit / Branch</th>
                             <th className="p-4">Training Role</th>
                             <th className="p-4 text-center">Status</th>
                             <th className="p-4 text-right pr-6">Manage Access</th>
@@ -97,10 +97,15 @@ export default function AdminEmployeesTab() {
                                             <div className="font-bold text-slate-700">{user.full_name}</div>
                                             <div className="text-xs">{user.email}</div>
                                         </td>
-                                        <td className="p-4 text-slate-500">
+                                        <td className="p-4 text-slate-500 flex flex-col gap-1 items-start">
                                             <span className="px-2 py-1 bg-slate-200 rounded-md text-xs font-bold">
                                                 {user.org_id ? 'CLIENT' : (user.department_slug || 'INTERNAL')}
                                             </span>
+                                            {!user.org_id && user.branch_slug && (
+                                                <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded-md text-[10px] font-bold uppercase tracking-wider">
+                                                    {user.branch_slug}
+                                                </span>
+                                            )}
                                         </td>
                                         <td className="p-3">
                                             <select
@@ -137,10 +142,15 @@ export default function AdminEmployeesTab() {
                                         <div className="font-bold text-slate-800">{user.full_name}</div>
                                         <div className="text-xs text-slate-500">{user.email}</div>
                                     </td>
-                                    <td className="p-4">
+                                    <td className="p-4 flex flex-col gap-1 items-start">
                                         <span className={`px-2 py-1 border text-[10px] font-bold rounded-md uppercase tracking-wider ${user.org_id ? 'bg-purple-100 border-purple-200 text-purple-700' : 'bg-slate-100 border-slate-200 text-slate-600'}`}>
                                             {user.org_id ? 'CLIENT' : (user.department_slug || 'INTERNAL')}
                                         </span>
+                                        {!user.org_id && user.branch_slug && (
+                                            <span className="px-2 py-1 border text-[10px] font-bold rounded-md uppercase tracking-wider bg-blue-50 border-blue-200 text-blue-700">
+                                                {user.branch_slug}
+                                            </span>
+                                        )}
                                     </td>
                                     <td className="p-4">
                                         <span className={`px-2 py-1 rounded-md text-xs font-bold ${user.role?.name === 'ADMIN' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600'}`}>

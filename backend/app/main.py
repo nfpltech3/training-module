@@ -127,6 +127,7 @@ class OsWebhookPayload(BaseModel):
     # Department event fields (absent on user events)
     department_id: Optional[str] = None
     department_slug: Optional[str] = None
+    branch_slug: Optional[str] = None
     department_name: Optional[str] = None
     new_slug: Optional[str] = None
     new_name: Optional[str] = None
@@ -222,6 +223,10 @@ def os_webhook(
             user.email = payload.email
         if payload.company_email is not None:
             user.company_email = payload.company_email or None
+        if payload.department_slug is not None:
+            user.department_slug = payload.department_slug or None
+        if payload.branch_slug is not None:
+            user.branch_slug = payload.branch_slug or None
         db.commit()
         print(f"[OS webhook] {payload.event}: synced user {payload.os_user_id} (company_email={payload.company_email})")
         return {"status": "ok", "action": "updated"}
