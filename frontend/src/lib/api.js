@@ -102,6 +102,10 @@ export const getReportSummary = (departmentSlug) => {
     const params = departmentSlug ? { department_slug: departmentSlug } : {};
     return api.get('/admin/reports/summary', { params });
 };
+export const getReportExportData = (departmentSlug) => {
+    const params = departmentSlug ? { department_slug: departmentSlug } : {};
+    return api.get('/admin/reports/export-data', { params });
+};
 export const getReportUserDetail = (userId) =>
     api.get(`/admin/reports/user/${userId}`);
 

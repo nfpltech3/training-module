@@ -126,9 +126,10 @@ class OsWebhookPayload(BaseModel):
     company_email: Optional[str] = None
     # Department event fields (absent on user events)
     department_id: Optional[str] = None
-    department_slug: Optional[str] = None
-    branch_slug: Optional[str] = None
     department_name: Optional[str] = None
+    branch_id: Optional[str] = None
+    branch_slug: Optional[str] = None
+    branch_name: Optional[str] = None
     new_slug: Optional[str] = None
     new_name: Optional[str] = None
     timestamp: str
@@ -191,6 +192,22 @@ def os_webhook(
                 dept.status = 'deleted'
                 db.commit()
         return {"status": "ok", "action": "department_soft_deleted"}
+
+    # ── Branch events ──────────────────────────────────────────────────
+    if payload.event == "branch.updated":
+        if payload.branch_slug and payload.new_slug and payload.branch_slug != payload.new_slug:
+            # Propagate slug rename to cached user records
+            db.query(models.User).filter(
+                models.User.branch_slug == payload.branch_slug
+            ).update({"branch_slug": payload.new_slug})
+            db.commit()
+        return {"status": "ok", "action": "branch_updated"}
+
+    # branch.deleted and branch.created don't require specific syncing for Trainings
+    # as branch assignment handles deletion reassignment and branches aren't cached 
+    # as independent tables in Trainings.
+    if payload.event in ["branch.deleted", "branch.created"]:
+        return {"status": "ok", "action": f"ignored_{payload.event}"}
 
     # ── User events ──────────────────────────────────────────────────
     user = db.query(models.User).filter(
@@ -1222,16 +1239,98 @@ def admin_report_summary(
             models.UserProgress.content_id.in_(visible_content_query)
         ).scalar()
 
+        last_activity = db.query(func.max(models.UserProgress.last_accessed_at)).filter(
+            models.UserProgress.user_id == user.id
+        ).scalar()
+
         results.append(schemas.UserSummaryReport(
             user_id=user.id,
             full_name=user.full_name,
             department_slug=user.department_slug,
+            role=user.role.name.capitalize() if user.role else "Employee",
             total_visible=visible_content_count,
             completed=completed_count,
             pending=visible_content_count - completed_count,
+            last_activity_at=last_activity
         ))
     return results
 
+@app.get("/admin/reports/export-data")
+def admin_report_export_data(
+    department_slug: Optional[str] = None,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(require_manager)
+):
+    admin_role_name = admin.role.name.upper() if admin.role else "EMPLOYEE"
+    
+    users_query = db.query(models.User).filter(
+        models.User.status == "active",
+        models.User.role.has(models.Role.name.in_(["EMPLOYEE", "ADMIN", "TEAM LEAD"]))
+    )
+
+    if admin_role_name == "TEAM LEAD":
+        users_query = users_query.filter(models.User.department_slug == admin.department_slug)
+    elif department_slug:
+        users_query = users_query.filter(models.User.department_slug == department_slug)
+
+    users = users_query.all()
+    user_ids = [u.id for u in users]
+    
+    # We will just fetch all progress for these users
+    progress_records = db.query(models.UserProgress).filter(
+        models.UserProgress.user_id.in_(user_ids)
+    ).all()
+    
+    progress_by_user = {}
+    for p in progress_records:
+        if p.user_id not in progress_by_user:
+            progress_by_user[p.user_id] = {}
+        progress_by_user[p.user_id][p.content_id] = p
+        
+    details = []
+    
+    # We also need to know which content is visible to which user.
+    # To optimize, we can just fetch all active modules and contents and evaluate per user.
+    active_modules = db.query(models.Module).filter(models.Module.is_active == True).all()
+    
+    for user in users:
+        target_role_name = user.role.name.upper() if user.role else "EMPLOYEE"
+        
+        for module in active_modules:
+            # Check module visibility for this user
+            if not any(r.name == target_role_name for r in module.roles):
+                continue
+                
+            if target_role_name == "CLIENT":
+                if not user.org_id:
+                    continue
+                if module.client_orgs and not any(co.org_id == user.org_id for co in module.client_orgs):
+                    continue
+            elif target_role_name != "ADMIN":
+                if module.departments:
+                    # check if user's dept is in module.departments
+                    if not any(md.department.slug == user.department_slug and md.department.status == 'active' for md in module.departments):
+                        continue
+                        
+            # Module is visible, add all active content
+            for content in module.content_items:
+                if not content.is_active:
+                    continue
+                    
+                prog = progress_by_user.get(user.id, {}).get(content.id)
+                details.append({
+                    "user_id": user.id,
+                    "full_name": user.full_name,
+                    "module_title": module.title,
+                    "module_created_at": module.created_at,
+                    "content_title": content.title,
+                    "content_created_at": content.created_at,
+                    "content_type": content.content_type,
+                    "is_completed": prog.is_completed if prog else False,
+                    "completed_at": prog.completed_at if prog else None,
+                })
+                
+    return details
 
 @app.get("/admin/reports/user/{user_id}", response_model=List[schemas.UserDetailedReport])
 def admin_report_user_detail(

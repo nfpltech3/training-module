@@ -173,9 +173,11 @@ class UserSummaryReport(BaseModel):
     user_id: str
     full_name: str
     department_slug: Optional[str] = None
+    role: str
     total_visible: int
     completed: int
     pending: int
+    last_activity_at: Optional[datetime] = None
 
 
 class UserDetailedReport(BaseModel):

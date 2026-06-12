@@ -1,8 +1,9 @@
 import React, { useState, useEffect, Fragment } from 'react';
-import { getReportSummary, getReportUserDetail, getDepartments } from '../lib/api';
+import * as XLSX from 'xlsx';
+import { getReportSummary, getReportUserDetail, getDepartments, getReportExportData } from '../lib/api';
 import { format } from 'date-fns';
 import { useAuth } from '../lib/AuthContext';
-import { Loader2, Search, Filter, AlertCircle, PlayCircle, FileText, CheckCircle2, X } from 'lucide-react';
+import { Loader2, Search, Filter, AlertCircle, PlayCircle, FileText, CheckCircle2, X, Download, ArrowUpDown } from 'lucide-react';
 
 export default function AdminReports() {
     const { user } = useAuth();
@@ -18,6 +19,8 @@ export default function AdminReports() {
     // Filters
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedDept, setSelectedDept] = useState(''); // empty means 'All'
+    const [sortOrder, setSortOrder] = useState(null); // 'asc' or 'desc'
+    const [exporting, setExporting] = useState(false);
 
     // Drill-down state
     const [selectedUser, setSelectedUser] = useState(null);
@@ -63,8 +66,78 @@ export default function AdminReports() {
             );
         }
 
+        if (sortOrder) {
+            result = [...result].sort((a, b) => {
+                const pctA = a.total_visible > 0 ? a.completed / a.total_visible : 0;
+                const pctB = b.total_visible > 0 ? b.completed / b.total_visible : 0;
+                return sortOrder === 'asc' ? pctA - pctB : pctB - pctA;
+            });
+        }
+
         setFilteredData(result);
-    }, [searchTerm, selectedDept, summaryData]);
+    }, [searchTerm, selectedDept, summaryData, sortOrder]);
+
+    const toggleSort = () => {
+        if (!sortOrder) setSortOrder('asc');
+        else if (sortOrder === 'asc') setSortOrder('desc');
+        else setSortOrder(null);
+    };
+
+    const handleExport = async () => {
+        try {
+            setExporting(true);
+            const res = await getReportExportData(selectedDept || undefined);
+            const details = res.data;
+
+            const summarySheetData = filteredData.map(row => {
+                const pct = row.total_visible > 0 ? Math.round((row.completed / row.total_visible) * 100) : 0;
+                const rawDept = departments.find(d => d.slug === row.department_slug)?.name || row.department_slug;
+                const displayDept = rawDept ? (rawDept.charAt(0).toUpperCase() + rawDept.slice(1)) : '—';
+                
+                return {
+                    "Employee Name": row.full_name,
+                    "Department": displayDept,
+                    "Role": row.role,
+                    "Total Assigned": row.total_visible,
+                    "Total Completed": row.completed,
+                    "Pending": row.pending,
+                    "Completion %": `${pct}%`,
+                    "Last Activity": row.last_activity_at ? format(new Date(row.last_activity_at), 'd MMM yyyy') : '—',
+                    "Remarks": ""
+                };
+            });
+
+            const detailSheetData = details.map(row => {
+                const summaryUser = summaryData.find(u => u.user_id === row.user_id) || {};
+                const rawDept = departments.find(d => d.slug === summaryUser.department_slug)?.name || summaryUser.department_slug;
+                const displayDept = rawDept ? (rawDept.charAt(0).toUpperCase() + rawDept.slice(1)) : '—';
+
+                return {
+                    "Employee Name": row.full_name,
+                    "Employee ID": row.user_id,
+                    "Department": displayDept,
+                    "Role": summaryUser.role || '—',
+                    "Video Title": row.content_title,
+                    "Assigned On": row.content_created_at ? format(new Date(row.content_created_at), 'd MMM yyyy') : '—',
+                    "Completed On": row.completed_at ? format(new Date(row.completed_at), 'd MMM yyyy') : '—',
+                    "Status": row.is_completed ? 'Completed' : 'Pending',
+                    "Remarks": ""
+                };
+            });
+
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summarySheetData), "Summary");
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(detailSheetData), "Details");
+
+            XLSX.writeFile(wb, `Training_Report_${format(new Date(), 'yyyy-MM-dd')}.xlsx`);
+
+        } catch (err) {
+            console.error("Export failed:", err);
+            setError("Failed to generate export file.");
+        } finally {
+            setExporting(false);
+        }
+    };
 
     const handleRowClick = async (user) => {
         setSelectedUser(user);
@@ -123,8 +196,8 @@ export default function AdminReports() {
                             />
                         </div>
 
-                        {isAdminRole && departments.length > 1 && (
-                            <div className="w-full sm:w-auto">
+                        <div className="flex items-center gap-3 w-full sm:w-auto">
+                            {isAdminRole && departments.length > 1 && (
                                 <select
                                     value={selectedDept}
                                     onChange={(e) => setSelectedDept(e.target.value)}
@@ -135,8 +208,16 @@ export default function AdminReports() {
                                         <option key={d.slug} value={d.slug}>{d.name}</option>
                                     ))}
                                 </select>
-                            </div>
-                        )}
+                            )}
+                            <button
+                                onClick={handleExport}
+                                disabled={exporting}
+                                className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-900 transition-colors text-sm font-semibold disabled:opacity-50"
+                            >
+                                {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                                {exporting ? 'Exporting...' : 'Export to Excel'}
+                            </button>
+                        </div>
                     </div>
 
                     {/* Data Table */}
@@ -149,7 +230,12 @@ export default function AdminReports() {
                                     <th className="p-4 text-center">Assigned Items</th>
                                     <th className="p-4 text-center">Completed</th>
                                     <th className="p-4 text-center">Pending</th>
-                                    <th className="p-4 pl-0">Progress</th>
+                                    <th className="p-4 pl-0 cursor-pointer hover:bg-gray-50 transition-colors group select-none" onClick={toggleSort}>
+                                        <div className="flex items-center gap-2">
+                                            Progress
+                                            <ArrowUpDown className={`w-3.5 h-3.5 transition-colors ${sortOrder ? 'text-blue-500' : 'text-slate-300 group-hover:text-slate-400'}`} />
+                                        </div>
+                                    </th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100 text-sm">

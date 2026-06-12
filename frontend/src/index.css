@@ -166,3 +166,16 @@ button {
   background: var(--color-secondary-container, #dbe3f1);
   border-radius: 10px;
 }
+
+/* SecureVideoPlayer Fullscreen */
+.relative:fullscreen {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    width: 100vw;
+}
+
+.relative:fullscreen > div:first-child {
+    flex: 1;
+    aspect-ratio: unset;
+}
