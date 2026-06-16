@@ -67,11 +67,13 @@ export default function ModuleViewer() {
     }, [moduleId]);
 
     // ── Reset timer state when active item changes ────────────────────
-    useEffect(() => {
+    const prevActiveItemIdRef = useRef(activeItem?.id);
+    if (activeItem?.id !== prevActiveItemIdRef.current) {
+        prevActiveItemIdRef.current = activeItem?.id;
         setTimeLeft(null);
         setVideoRequired(0);
         setIsPlaying(false);
-    }, [activeItem?.id]);
+    }
 
     // ── Timer — runs continuously for both DOCUMENT and VIDEO ─────────
     useEffect(() => {
