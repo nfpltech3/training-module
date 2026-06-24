@@ -337,8 +337,18 @@ export default function ModuleViewer() {
                             {/* Additional Notes Box */}
                             {activeItem.additional_notes && (
                                 <div className="p-4 md:p-6 bg-slate-50 border-b border-slate-200">
-                                    <div className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed bg-white p-4 md:p-5 rounded-xl border border-slate-200 shadow-sm">
-                                        {activeItem.additional_notes}
+                                    <div className="flex gap-3 md:gap-4 max-w-4xl">
+                                        <div className="w-10 h-10 md:w-12 md:h-12 rounded-full bg-blue-100 flex items-center justify-center shrink-0 border border-blue-200 shadow-sm">
+                                            <span className="material-symbols-outlined text-blue-600 text-[20px] md:text-[24px]">person</span>
+                                        </div>
+                                        <div className="flex-1 bg-white border border-slate-200 rounded-2xl rounded-tl-sm p-4 md:p-5 shadow-sm">
+                                            <div className="flex items-center gap-2 mb-2">
+                                                <span className="font-bold text-slate-800 text-sm">Comments</span>
+                                            </div>
+                                            <div className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">
+                                                {activeItem.additional_notes}
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             )}
