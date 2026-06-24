@@ -334,6 +334,15 @@ export default function ModuleViewer() {
                                 )}
                             </div>
 
+                            {/* Additional Notes Box */}
+                            {activeItem.additional_notes && (
+                                <div className="p-4 md:p-6 bg-slate-50 border-b border-slate-200">
+                                    <div className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed bg-white p-4 md:p-5 rounded-xl border border-slate-200 shadow-sm">
+                                        {activeItem.additional_notes}
+                                    </div>
+                                </div>
+                            )}
+
                             {/* Mark as Complete Footer */}
                             <div className="fixed bottom-0 left-0 right-0 z-50 md:static p-4 md:p-6 flex flex-row items-center justify-between border-t border-slate-200 bg-white md:bg-slate-100">
                                 <div className="flex items-center gap-2 md:gap-3">

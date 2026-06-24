@@ -124,6 +124,7 @@ class Content(Base):
     module = relationship("Module", back_populates="content_items")
     sequence_index = Column(Integer, default=0)
     total_duration = Column(Integer, nullable=True)  
+    additional_notes = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)

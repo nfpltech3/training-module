@@ -116,7 +116,7 @@ export default function AdminModulesTab() {
     const [isSubmittingModule, setIsSubmittingModule] = useState(false);
 
     // Content creation form (inline)
-    const [contentForm, setContentForm] = useState({ title: '', description: '', content_type: 'VIDEO', embed_url: '', total_duration: 0 });
+    const [contentForm, setContentForm] = useState({ title: '', description: '', content_type: 'VIDEO', embed_url: '', total_duration: 0, additional_notes: '' });
     const [uploadFile, setUploadFile] = useState(null);
     const [isCreatingContent, setIsCreatingContent] = useState(false);
     const [contentValidationError, setContentValidationError] = useState('');
@@ -132,7 +132,7 @@ export default function AdminModulesTab() {
 
     // Content edit modal
     const [showEditContentModal, setShowEditContentModal] = useState(false);
-    const [editContentForm, setEditContentForm] = useState({ id: null, title: '', description: '', content_type: 'VIDEO', embed_url: '', total_duration: 0 });
+    const [editContentForm, setEditContentForm] = useState({ id: null, title: '', description: '', content_type: 'VIDEO', embed_url: '', total_duration: 0, additional_notes: '' });
     const [isEditingContent, setIsEditingContent] = useState(false);
 
     // Delete confirmation (content)
@@ -447,7 +447,7 @@ export default function AdminModulesTab() {
                 notify_users: notifyUsers
             });
             
-            setContentForm({ title: '', description: '', content_type: 'VIDEO', embed_url: '', total_duration: 0 });
+            setContentForm({ title: '', description: '', content_type: 'VIDEO', embed_url: '', total_duration: 0, additional_notes: '' });
             setUploadFile(null);
             setNotifyUsers(false);
             setSuccessMessage(notifyUsers ? 'Content added & notifications sent!' : 'Content added successfully!');
@@ -923,7 +923,6 @@ export default function AdminModulesTab() {
                                             </div>
                                         )}
                                     </div>
-                                    {/* Description field for content */}
                                     <div className="md:col-span-3">
                                         <label className="block text-sm font-semibold text-slate-700 mb-1">
                                             Description <span className="text-xs font-normal text-slate-400">(Optional)</span>
@@ -932,6 +931,17 @@ export default function AdminModulesTab() {
                                             value={contentForm.description}
                                             onChange={e => setContentForm({...contentForm, description: e.target.value})}
                                             placeholder="Brief description of this content item..."
+                                            className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 text-sm resize-none h-16"
+                                        />
+                                    </div>
+                                    <div className="md:col-span-3">
+                                        <label className="block text-sm font-semibold text-slate-700 mb-1">
+                                            Additional Comments / Instructions <span className="text-xs font-normal text-slate-400">(Optional)</span>
+                                        </label>
+                                        <textarea
+                                            value={contentForm.additional_notes}
+                                            onChange={e => setContentForm({...contentForm, additional_notes: e.target.value})}
+                                            placeholder="Any extra instructions, comments, or remarks for learners..."
                                             className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 text-sm resize-none h-16"
                                         />
                                     </div>
@@ -1105,6 +1115,7 @@ export default function AdminModulesTab() {
                                                                                                     content_type: item.content_type,
                                                                                                     embed_url: item.embed_url || '',
                                                                                                     document_url: item.document_url || '',
+                                                                                                    additional_notes: item.additional_notes || '',
                                                                                                     created_at: item.created_at,
                                                                                                     updated_at: item.updated_at
                                                                                                 });
@@ -1214,6 +1225,18 @@ export default function AdminModulesTab() {
                                     value={editContentForm.description}
                                     onChange={e => setEditContentForm({ ...editContentForm, description: e.target.value })}
                                     placeholder="Brief description of this content item..."
+                                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl focus:bg-white outline-none transition resize-none h-20"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-bold text-slate-400 uppercase tracking-tighter mb-1.5 ml-1 text-left">
+                                    Additional Comments / Instructions <span className="text-slate-300">(Optional)</span>
+                                </label>
+                                <textarea
+                                    value={editContentForm.additional_notes}
+                                    onChange={e => setEditContentForm({ ...editContentForm, additional_notes: e.target.value })}
+                                    placeholder="Any extra instructions, comments, or remarks for learners..."
                                     className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl focus:bg-white outline-none transition resize-none h-20"
                                 />
                             </div>

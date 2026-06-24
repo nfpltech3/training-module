@@ -11,6 +11,11 @@ export default function LearnerDashboard() {
     const [progressMap, setProgressMap] = useState(new Map());
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
+    const [filterMode, setFilterMode] = useState(() => localStorage.getItem('learnerDashboardFilter') || 'ALL');
+
+    useEffect(() => {
+        localStorage.setItem('learnerDashboardFilter', filterMode);
+    }, [filterMode]);
 
     const firstName = user?.full_name?.split(' ')[0] || 'Learner';
 
@@ -70,8 +75,31 @@ export default function LearnerDashboard() {
         });
     };
 
-    const companyWide = sortModules(modules.filter(m => !m.department_slugs || m.department_slugs.length === 0));
-    const deptSpecific = sortModules(modules.filter(m => m.department_slugs && m.department_slugs.length > 0));
+    // Base filter: remove completely empty modules (0 videos) as requested
+    const validModules = modules.filter(m => {
+        const stats = getModuleStats(m);
+        return stats.total > 0;
+    });
+
+    // Apply the active filter
+    const filteredModules = validModules.filter(m => {
+        const stats = getModuleStats(m);
+        if (filterMode === 'PENDING') return stats.pct < 100;
+        if (filterMode === 'COMPLETED') return stats.pct === 100;
+        return true; // 'ALL'
+    });
+
+    const companyWide = sortModules(filteredModules.filter(m => !m.department_slugs || m.department_slugs.length === 0));
+    const deptSpecific = sortModules(filteredModules.filter(m => m.department_slugs && m.department_slugs.length > 0));
+
+    // For filtered views, we want a flat list sorted by pending videos descending
+    const flatFilteredModules = [...filteredModules].sort((a, b) => {
+        const statsA = getModuleStats(a);
+        const statsB = getModuleStats(b);
+        const pendingA = statsA.total - statsA.completed;
+        const pendingB = statsB.total - statsB.completed;
+        return pendingB - pendingA;
+    });
 
     const totalModulesAssigned = modules.length;
     const totalContentsAssigned = modules.reduce((acc, m) => acc + (m.content_items?.length || 0), 0);
@@ -166,25 +194,34 @@ export default function LearnerDashboard() {
                     <div className="flex flex-col lg:flex-row items-center justify-between gap-4 lg:gap-8">
                         
                         {/* 3 Stats with dividers */}
-                        <div className="grid grid-cols-3 divide-x divide-outline-variant/30 w-full lg:flex lg:w-auto">
+                        <div className="grid grid-cols-3 divide-x divide-outline-variant/30 w-full lg:flex lg:w-auto overflow-hidden rounded-xl lg:rounded-none">
                             {/* Assigned */}
-                            <div className="flex flex-col items-center justify-center py-2 lg:py-0 lg:pl-6 lg:px-10">
-                                <span className="material-symbols-outlined text-secondary text-[18px] lg:text-[22px] mb-1 lg:mb-1.5">assignment</span>
-                                <span className="font-headline-lg text-2xl lg:text-3xl text-on-surface leading-none mb-1">{totalContentsAssigned}</span>
-                                <span className="font-label-md text-[11px] uppercase tracking-wider font-bold text-secondary text-center">Assigned</span>
+                            <div 
+                                onClick={() => setFilterMode('ALL')}
+                                className={`flex flex-col items-center justify-center py-3 lg:py-2 lg:pl-6 lg:px-10 cursor-pointer transition-colors ${filterMode === 'ALL' ? 'bg-primary/10 shadow-inner' : 'hover:bg-surface-container-low'}`}
+                            >
+                                <span className={`material-symbols-outlined text-[18px] lg:text-[22px] mb-1 lg:mb-1.5 ${filterMode === 'ALL' ? 'text-primary' : 'text-secondary'}`}>assignment</span>
+                                <span className={`font-headline-lg text-2xl lg:text-3xl leading-none mb-1 ${filterMode === 'ALL' ? 'text-primary' : 'text-on-surface'}`}>{totalContentsAssigned}</span>
+                                <span className={`font-label-md text-[11px] uppercase tracking-wider font-bold text-center ${filterMode === 'ALL' ? 'text-primary' : 'text-secondary'}`}>Assigned</span>
                             </div>
                             
                             {/* Completed */}
-                            <div className="flex flex-col items-center justify-center py-2 lg:py-0 lg:px-6">
-                                <span className="material-symbols-outlined text-tertiary text-[18px] lg:text-[22px] mb-1 lg:mb-1.5">check_circle</span>
-                                <span className="font-headline-lg text-2xl lg:text-3xl text-on-surface leading-none mb-1">{totalContentsCompleted}</span>
+                            <div 
+                                onClick={() => setFilterMode('COMPLETED')}
+                                className={`flex flex-col items-center justify-center py-3 lg:py-2 lg:px-6 cursor-pointer transition-colors ${filterMode === 'COMPLETED' ? 'bg-tertiary/10 shadow-inner' : 'hover:bg-surface-container-low'}`}
+                            >
+                                <span className={`material-symbols-outlined text-tertiary text-[18px] lg:text-[22px] mb-1 lg:mb-1.5 ${filterMode === 'COMPLETED' ? 'text-tertiary font-bold' : ''}`}>check_circle</span>
+                                <span className={`font-headline-lg text-2xl lg:text-3xl leading-none mb-1 ${filterMode === 'COMPLETED' ? 'text-tertiary font-bold' : 'text-on-surface'}`}>{totalContentsCompleted}</span>
                                 <span className="font-label-md text-[11px] uppercase tracking-wider font-bold text-tertiary text-center">Completed</span>
                             </div>
 
                             {/* Remaining */}
-                            <div className="flex flex-col items-center justify-center py-2 lg:py-0 lg:px-10 lg:pr-6">
-                                <span className="material-symbols-outlined text-amber-600 text-[18px] lg:text-[22px] mb-1 lg:mb-1.5">schedule</span>
-                                <span className="font-headline-lg text-2xl lg:text-3xl text-on-surface leading-none mb-1">{totalContentsRemaining}</span>
+                            <div 
+                                onClick={() => setFilterMode('PENDING')}
+                                className={`flex flex-col items-center justify-center py-3 lg:py-2 lg:px-10 lg:pr-6 cursor-pointer transition-colors ${filterMode === 'PENDING' ? 'bg-amber-600/10 shadow-inner' : 'hover:bg-surface-container-low'}`}
+                            >
+                                <span className={`material-symbols-outlined text-amber-600 text-[18px] lg:text-[22px] mb-1 lg:mb-1.5 ${filterMode === 'PENDING' ? 'text-amber-600 font-bold' : ''}`}>schedule</span>
+                                <span className={`font-headline-lg text-2xl lg:text-3xl leading-none mb-1 ${filterMode === 'PENDING' ? 'text-amber-600 font-bold' : 'text-on-surface'}`}>{totalContentsRemaining}</span>
                                 <span className="font-label-md text-[11px] uppercase tracking-wider font-bold text-amber-600 text-center">Remaining</span>
                             </div>
                         </div>
@@ -210,38 +247,59 @@ export default function LearnerDashboard() {
                 </div>
             </section>
 
-            {/* Your Department Section */}
-            {deptSpecific.length > 0 && (
-                <section className="mb-stack-lg">
-                    <header className="mb-gutter">
-                        <h2 className="font-headline-md text-headline-md text-on-surface">{user?.department?.name ? `${user.department.name} Modules` : 'Your Department'}</h2>
-                    </header>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-gutter">
-                        {deptSpecific.map(m => <ModuleCard key={m.id} module={m} />)}
-                    </div>
-                </section>
-            )}
+            {filterMode === 'ALL' ? (
+                <>
+                    {/* Your Department Section */}
+                    {deptSpecific.length > 0 && (
+                        <section className="mb-stack-lg">
+                            <header className="mb-gutter">
+                                <h2 className="font-headline-md text-headline-md text-on-surface">{user?.department?.name ? `${user.department.name} Modules` : 'Your Department'}</h2>
+                            </header>
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-gutter">
+                                {deptSpecific.map(m => <ModuleCard key={m.id} module={m} />)}
+                            </div>
+                        </section>
+                    )}
 
-            {/* Company-Wide Training Section */}
-            {companyWide.length > 0 && (
-                <section>
-                    <header className="mb-gutter">
-                        <h2 className="font-headline-md text-headline-md text-on-surface">Company-Wide Training</h2>
+                    {/* Company-Wide Training Section */}
+                    {companyWide.length > 0 && (
+                        <section>
+                            <header className="mb-gutter">
+                                <h2 className="font-headline-md text-headline-md text-on-surface">Company-Wide Training</h2>
+                            </header>
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-gutter">
+                                {companyWide.map(m => <ModuleCard key={m.id} module={m} />)}
+                            </div>
+                        </section>
+                    )}
+                </>
+            ) : (
+                <section className="mb-stack-lg">
+                    <header className="mb-gutter flex items-center justify-between">
+                        <h2 className="font-headline-md text-headline-md text-on-surface">
+                            {filterMode === 'PENDING' ? 'Pending Modules' : 'Completed Modules'}
+                        </h2>
                     </header>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-gutter">
-                        {companyWide.map(m => <ModuleCard key={m.id} module={m} />)}
+                        {flatFilteredModules.map(m => <ModuleCard key={m.id} module={m} />)}
                     </div>
                 </section>
             )}
             
             {/* Empty State */}
-            {modules.length === 0 && !error && (
+            {filteredModules.length === 0 && !error && (
                 <section className="text-center py-20 bg-surface-container-lowest rounded-xl elevation-1 border border-outline-variant/10">
                     <div className="w-14 h-14 bg-surface-container-low rounded-full flex items-center justify-center mx-auto mb-4">
                         <span className="material-symbols-outlined text-secondary text-3xl">inbox</span>
                     </div>
-                    <h3 className="font-headline-md text-headline-md text-on-surface mb-2">You're all caught up!</h3>
-                    <p className="font-body-md text-body-md text-secondary">No training modules are assigned to you right now.</p>
+                    <h3 className="font-headline-md text-headline-md text-on-surface mb-2">
+                        {filterMode === 'ALL' ? "You're all caught up!" : "No modules found"}
+                    </h3>
+                    <p className="font-body-md text-body-md text-secondary">
+                        {filterMode === 'ALL' 
+                            ? "No training modules are assigned to you right now."
+                            : "There are no modules matching your current filter."}
+                    </p>
                 </section>
             )}
         </div>

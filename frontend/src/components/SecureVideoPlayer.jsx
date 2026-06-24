@@ -6,15 +6,15 @@ const YOUTUBE_OPTS = {
     width: '100%',
     height: '100%',
     playerVars: {
-        autoplay:       1,
-        controls:       0,
-        disablekb:      1,
+        autoplay: 1,
+        controls: 0,
+        disablekb: 1,
         modestbranding: 1,
-        rel:            0,
-        fs:             0,
+        rel: 0,
+        fs: 0,
         iv_load_policy: 3,
-        playsinline:    1,
-        showinfo:       0,
+        playsinline: 1,
+        showinfo: 0,
     },
 };
 
@@ -22,13 +22,13 @@ export default function SecureVideoPlayer({
     embedUrl,
     onProgressUpdate,
     isAlreadyCompleted = false,
-    initialTime        = 0,
+    initialTime = 0,
     onDurationReady,   // (requiredSeconds: number) => void — fires once when duration known
     onPlayStateChange, // (isPlaying: boolean) => void
 }) {
-    const playerRef   = useRef(null);
+    const playerRef = useRef(null);
     const positionRef = useRef(null); // saves watch position every 10s
-    const monitorRef  = useRef(null); // fast interval for UI and seek prevention
+    const monitorRef = useRef(null); // fast interval for UI and seek prevention
     const lastTimeRef = useRef(initialTime);
     const furthestWatchedRef = useRef(initialTime); // NEW — never decreases
     const containerRef = useRef(null);
@@ -215,12 +215,12 @@ export default function SecureVideoPlayer({
     const toggleFullscreen = () => {
         const iframe = containerRef.current?.querySelector('iframe');
         if (!document.fullscreenElement) {
-            (containerRef.current?.requestFullscreen?.() 
+            (containerRef.current?.requestFullscreen?.()
                 || containerRef.current?.webkitRequestFullscreen?.()
                 || containerRef.current?.msRequestFullscreen?.()
                 || iframe?.webkitEnterFullscreen?.());
         } else {
-            document.exitFullscreen?.() 
+            document.exitFullscreen?.()
                 || document.webkitExitFullscreen?.()
                 || document.msExitFullscreen?.();
         }
@@ -244,28 +244,28 @@ export default function SecureVideoPlayer({
     const renderSeekBar = () => (
         <div className="flex-1 relative flex items-center h-5 group/seek">
             <div className="absolute inset-y-0 left-0 right-0 h-1.5 top-1/2 -translate-y-1/2 rounded-full bg-slate-800 overflow-hidden pointer-events-none">
-                <div 
+                <div
                     className="absolute top-0 left-0 h-full bg-slate-500 transition-all duration-300"
                     style={{ width: `${isAlreadyCompleted ? 100 : watchedPercent}%` }}
                 />
-                <div 
+                <div
                     className="absolute top-0 left-0 h-full bg-blue-500"
                     style={{ width: `${currentPercent}%` }}
                 />
             </div>
-            
-            <div 
+
+            <div
                 className="absolute pointer-events-none z-10"
                 style={{ left: `${currentPercent}%` }}
             >
                 <div className="w-3 h-3 sm:w-3.5 sm:h-3.5 bg-blue-500 rounded-full -translate-x-1/2 scale-0 group-hover/seek:scale-100 transition-transform shadow-md" />
             </div>
 
-            <input 
-                type="range" 
-                min="0" 
-                max={duration || 100} 
-                value={currentTime} 
+            <input
+                type="range"
+                min="0"
+                max={duration || 100}
+                value={currentTime}
                 onChange={handleSeek}
                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20"
             />
@@ -286,9 +286,9 @@ export default function SecureVideoPlayer({
                     />
                 </div>
             </div>
-            
+
             <div className="bg-slate-900 text-white flex flex-col relative z-10 w-full select-none">
-                
+
                 {/* Desktop: Single Row Layout */}
                 <div className="hidden sm:flex items-center gap-4 p-3 w-full">
                     <div className="flex items-center gap-2 shrink-0">
@@ -306,9 +306,9 @@ export default function SecureVideoPlayer({
                         <button onClick={toggleMute} className="p-1.5 rounded-full hover:bg-slate-800 transition-colors">
                             {isMuted || volume === 0 ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
                         </button>
-                        <input 
-                            type="range" min="0" max="100" value={isMuted ? 0 : volume} onChange={handleVolume} 
-                            className="w-[70px] h-1.5 bg-slate-600 rounded-lg appearance-none cursor-pointer accent-blue-500" 
+                        <input
+                            type="range" min="0" max="100" value={isMuted ? 0 : volume} onChange={handleVolume}
+                            className="w-[70px] h-1.5 bg-slate-600 rounded-lg appearance-none cursor-pointer accent-blue-500"
                         />
                     </div>
 
@@ -335,9 +335,9 @@ export default function SecureVideoPlayer({
                                 <button onClick={toggleMute} className="p-2 rounded-full hover:bg-slate-800 transition-colors">
                                     {isMuted || volume === 0 ? <VolumeX className="w-6 h-6" /> : <Volume2 className="w-6 h-6" />}
                                 </button>
-                                <input 
-                                    type="range" min="0" max="100" value={isMuted ? 0 : volume} onChange={handleVolume} 
-                                    className="w-[60px] h-1.5 bg-slate-600 rounded-lg appearance-none cursor-pointer accent-blue-500" 
+                                <input
+                                    type="range" min="0" max="100" value={isMuted ? 0 : volume} onChange={handleVolume}
+                                    className="w-[60px] h-1.5 bg-slate-600 rounded-lg appearance-none cursor-pointer accent-blue-500"
                                 />
                             </div>
 

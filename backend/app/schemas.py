@@ -71,6 +71,7 @@ class ContentBase(BaseModel):
     module_id: str
     sequence_index: int = 0
     total_duration: Optional[int] = None
+    additional_notes: Optional[str] = None
 
 
 class ContentCreate(ContentBase):
@@ -86,6 +87,7 @@ class ContentUpdate(BaseModel):
     module_id: Optional[str] = None
     sequence_index: Optional[int] = None
     total_duration: Optional[int] = None
+    additional_notes: Optional[str] = None
     is_active: Optional[bool] = None
 
 
