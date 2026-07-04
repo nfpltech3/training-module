@@ -93,17 +93,16 @@ export default function AdminReports() {
                 const pct = row.total_visible > 0 ? Math.round((row.completed / row.total_visible) * 100) : 0;
                 const rawDept = departments.find(d => d.slug === row.department_slug)?.name || row.department_slug;
                 const displayDept = rawDept ? (rawDept.charAt(0).toUpperCase() + rawDept.slice(1)) : '—';
+                const displayBranch = row.branch_slug ? (row.branch_slug.charAt(0).toUpperCase() + row.branch_slug.slice(1)) : '—';
                 
                 return {
-                    "Employee Name": row.full_name,
+                    "Name": row.full_name,
                     "Department": displayDept,
-                    "Role": row.role,
-                    "Total Assigned": row.total_visible,
-                    "Total Completed": row.completed,
+                    "Branch": displayBranch,
+                    "Assigned": row.total_visible,
                     "Pending": row.pending,
-                    "Completion %": `${pct}%`,
-                    "Last Activity": row.last_activity_at ? format(new Date(row.last_activity_at), 'd MMM yyyy') : '—',
-                    "Remarks": ""
+                    "Completed": row.completed,
+                    "Completion": pct
                 };
             });
 
@@ -111,17 +110,17 @@ export default function AdminReports() {
                 const summaryUser = summaryData.find(u => u.user_id === row.user_id) || {};
                 const rawDept = departments.find(d => d.slug === summaryUser.department_slug)?.name || summaryUser.department_slug;
                 const displayDept = rawDept ? (rawDept.charAt(0).toUpperCase() + rawDept.slice(1)) : '—';
+                const displayBranch = summaryUser.branch_slug ? (summaryUser.branch_slug.charAt(0).toUpperCase() + summaryUser.branch_slug.slice(1)) : '—';
 
                 return {
-                    "Employee Name": row.full_name,
-                    "Employee ID": row.user_id,
+                    "Name": row.full_name,
                     "Department": displayDept,
-                    "Role": summaryUser.role || '—',
-                    "Video Title": row.content_title,
-                    "Assigned On": row.content_created_at ? format(new Date(row.content_created_at), 'd MMM yyyy') : '—',
-                    "Completed On": row.completed_at ? format(new Date(row.completed_at), 'd MMM yyyy') : '—',
-                    "Status": row.is_completed ? 'Completed' : 'Pending',
-                    "Remarks": ""
+                    "Branch": displayBranch,
+                    "Title": row.content_title,
+                    "Module": row.module_title,
+                    "Assigned On": row.content_created_at ? format(new Date(row.content_created_at), 'dd-MMM-yyyy') : '—',
+                    "Completed On": row.completed_at ? format(new Date(row.completed_at), 'dd-MMM-yyyy') : '—',
+                    "Status": row.is_completed ? 'Completed' : 'Pending'
                 };
             });
 
@@ -129,7 +128,7 @@ export default function AdminReports() {
             XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summarySheetData), "Summary");
             XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(detailSheetData), "Details");
 
-            XLSX.writeFile(wb, `Training_Report_${format(new Date(), 'yyyy-MM-dd')}.xlsx`);
+            XLSX.writeFile(wb, `Trainings_Report_${format(new Date(), 'yyyy-MM-dd')}.xlsx`);
 
         } catch (err) {
             console.error("Export failed:", err);

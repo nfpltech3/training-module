@@ -126,6 +126,7 @@ class OsWebhookPayload(BaseModel):
     company_email: Optional[str] = None
     # Department event fields (absent on user events)
     department_id: Optional[str] = None
+    department_slug: Optional[str] = None
     department_name: Optional[str] = None
     branch_id: Optional[str] = None
     branch_slug: Optional[str] = None
@@ -1247,6 +1248,7 @@ def admin_report_summary(
             user_id=user.id,
             full_name=user.full_name,
             department_slug=user.department_slug,
+            branch_slug=user.branch_slug,
             role=user.role.name.capitalize() if user.role else "Employee",
             total_visible=visible_content_count,
             completed=completed_count,
