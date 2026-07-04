@@ -102,7 +102,7 @@ export default function AdminReports() {
                     "Assigned": row.total_visible,
                     "Pending": row.pending,
                     "Completed": row.completed,
-                    "Completion": pct
+                    "Completion %": pct
                 };
             });
 
