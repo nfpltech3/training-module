@@ -93,7 +93,8 @@ export default function AdminReports() {
                 const pct = row.total_visible > 0 ? Math.round((row.completed / row.total_visible) * 100) : 0;
                 const rawDept = departments.find(d => d.slug === row.department_slug)?.name || row.department_slug;
                 const displayDept = rawDept ? (rawDept.charAt(0).toUpperCase() + rawDept.slice(1)) : '—';
-                const displayBranch = row.branch_slug ? (row.branch_slug.charAt(0).toUpperCase() + row.branch_slug.slice(1)) : '—';
+                const branchName = row.branch_name || row.branch_slug;
+                const displayBranch = branchName ? (branchName.charAt(0).toUpperCase() + branchName.slice(1)) : '—';
                 
                 return {
                     "Name": row.full_name,
@@ -110,7 +111,8 @@ export default function AdminReports() {
                 const summaryUser = summaryData.find(u => u.user_id === row.user_id) || {};
                 const rawDept = departments.find(d => d.slug === summaryUser.department_slug)?.name || summaryUser.department_slug;
                 const displayDept = rawDept ? (rawDept.charAt(0).toUpperCase() + rawDept.slice(1)) : '—';
-                const displayBranch = summaryUser.branch_slug ? (summaryUser.branch_slug.charAt(0).toUpperCase() + summaryUser.branch_slug.slice(1)) : '—';
+                const branchName = summaryUser.branch_name || summaryUser.branch_slug;
+                const displayBranch = branchName ? (branchName.charAt(0).toUpperCase() + branchName.slice(1)) : '—';
 
                 return {
                     "Name": row.full_name,

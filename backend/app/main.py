@@ -245,6 +245,8 @@ def os_webhook(
             user.department_slug = payload.department_slug or None
         if payload.branch_slug is not None:
             user.branch_slug = payload.branch_slug or None
+        if payload.branch_name is not None:
+            user.branch_name = payload.branch_name or None
         db.commit()
         print(f"[OS webhook] {payload.event}: synced user {payload.os_user_id} (company_email={payload.company_email})")
         return {"status": "ok", "action": "updated"}
@@ -1249,6 +1251,7 @@ def admin_report_summary(
             full_name=user.full_name,
             department_slug=user.department_slug,
             branch_slug=user.branch_slug,
+            branch_name=user.branch_name,
             role=user.role.name.capitalize() if user.role else "Employee",
             total_visible=visible_content_count,
             completed=completed_count,

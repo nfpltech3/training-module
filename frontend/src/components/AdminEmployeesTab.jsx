@@ -101,9 +101,9 @@ export default function AdminEmployeesTab() {
                                             <span className="px-2 py-1 bg-slate-200 rounded-md text-xs font-bold">
                                                 {user.org_id ? 'CLIENT' : (user.department_slug || 'INTERNAL')}
                                             </span>
-                                            {!user.org_id && user.branch_slug && (
+                                            {!user.org_id && (user.branch_name || user.branch_slug) && (
                                                 <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded-md text-[10px] font-bold uppercase tracking-wider">
-                                                    {user.branch_slug}
+                                                    {user.branch_name || user.branch_slug}
                                                 </span>
                                             )}
                                         </td>
@@ -146,9 +146,9 @@ export default function AdminEmployeesTab() {
                                         <span className={`px-2 py-1 border text-[10px] font-bold rounded-md uppercase tracking-wider ${user.org_id ? 'bg-purple-100 border-purple-200 text-purple-700' : 'bg-slate-100 border-slate-200 text-slate-600'}`}>
                                             {user.org_id ? 'CLIENT' : (user.department_slug || 'INTERNAL')}
                                         </span>
-                                        {!user.org_id && user.branch_slug && (
+                                        {!user.org_id && (user.branch_name || user.branch_slug) && (
                                             <span className="px-2 py-1 border text-[10px] font-bold rounded-md uppercase tracking-wider bg-blue-50 border-blue-200 text-blue-700">
-                                                {user.branch_slug}
+                                                {user.branch_name || user.branch_slug}
                                             </span>
                                         )}
                                     </td>

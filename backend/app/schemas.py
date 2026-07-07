@@ -176,6 +176,7 @@ class UserSummaryReport(BaseModel):
     full_name: str
     department_slug: Optional[str] = None
     branch_slug: Optional[str] = None
+    branch_name: Optional[str] = None
     role: str
     total_visible: int
     completed: int

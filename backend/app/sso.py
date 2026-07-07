@@ -77,6 +77,7 @@ def sso_login(request: Request, body: SsoRequest, response: Response, db: Sessio
     department_slug = payload.get("department_slug")
     department_name = payload.get("department_name")
     branch_slug = payload.get("branch_slug")
+    branch_name = payload.get("branch_name")
     org_id = payload.get("org_id")  # Client org (null for employees)
     is_app_admin = payload.get("is_app_admin", False)
     is_team_lead = payload.get("is_team_lead", False)
@@ -166,6 +167,7 @@ def sso_login(request: Request, body: SsoRequest, response: Response, db: Sessio
             user.company_email = company_email
         user.department_slug = department_slug
         user.branch_slug = branch_slug
+        user.branch_name = branch_name
         user.org_id = org_id
         user.is_app_admin = is_app_admin
         if user.os_user_id != os_user_id:
