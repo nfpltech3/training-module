@@ -488,15 +488,20 @@ const AdminUnifiedScheduleGrid = ({ items, onSuccess }) => {
                             }
                         }
                     } else {
-                        // For scheduled (but not published) rows, explicitly make time black
                         if (colIdx === COL.TIME) {
                             cell.style.color = '#000000';
+                            cell.style.cursor = 'pointer';
+                            cell.style.pointerEvents = 'auto';
                         }
                     }
                 } else {
                     cell.parentElement.classList.remove('scheduled-row');
+                    // Ensure draft time cells are also explicitly clickable
+                    if (colIdx === COL.TIME) {
+                        cell.style.cursor = 'pointer';
+                        cell.style.pointerEvents = 'auto';
+                    }
                 }
-
                 // YouTube cell: [🔗 icon] + plain text, always both present
                 if (colIdx === COL.YOUTUBE) {
                     // Remove any stale icon before re-adding
@@ -720,16 +725,23 @@ const AdminUnifiedScheduleGrid = ({ items, onSuccess }) => {
         };
 
         const handleGridMouseDown = (e) => {
+            // Ensure target is an Element (Text nodes don't have .closest)
+            const target = e.target instanceof Element ? e.target : e.target.parentElement;
+            if (!target) return;
+
             // Intercept clicks on the YouTube open-link icon
-            const ytOpenIcon = e.target.closest('.yt-open-icon');
+            const ytOpenIcon = target.closest('.yt-open-icon');
             if (ytOpenIcon) {
                 return; // Already handled by the icon's own mousedown listener
             }
 
-            const td = e.target.closest('td[data-x]');
+            const td = target.closest('td[data-x]');
             if (td) {
                 const colIdx = parseInt(td.getAttribute('data-x'), 10);
-                const rowIdx = parseInt(td.closest('tr').getAttribute('data-y'), 10);
+                const tr = td.closest('tr');
+                if (!tr) return;
+                
+                const rowIdx = parseInt(tr.getAttribute('data-y'), 10);
                 
                 if (colIdx === COL.TIME) {
                     const statusHtml = sheetRef.current.getValueFromCoords(COL.STATUS, rowIdx);

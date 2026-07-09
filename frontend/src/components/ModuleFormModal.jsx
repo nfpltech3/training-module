@@ -98,6 +98,11 @@ export default function ModuleFormModal({
             finalForm.department_slugs = [];
         }
 
+        // Prevent Pydantic 422 validation error for empty enum
+        if (!finalForm.module_type) {
+            delete finalForm.module_type;
+        }
+
         await onSubmit(finalForm);
     };
 
