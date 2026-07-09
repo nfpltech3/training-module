@@ -195,9 +195,10 @@ const AdminUnifiedScheduleGrid = ({ items, onSuccess }) => {
             // Restore exact draft content (including completely blank rows at the end)
             data.push(...existingDrafts);
         } else {
-            // Initial blank draft rows with 12:30 PM default for Publish Time
+            // Initial blank draft rows with 12:30 PM default for Publish Time only on the first draft row
             for (let i = 0; i < INITIAL_ROW_COUNT; i++) {
-                data.push(['', '', '', '', '', '12:30 PM', '', '', '', '']);
+                const defaultTime = i === 0 ? '12:30 PM' : '';
+                data.push(['', '', '', '', '', defaultTime, '', '', '', '']);
             }
         }
 
