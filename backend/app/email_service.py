@@ -28,10 +28,13 @@ def send_content_notification_emails(content_id: str, uploader_id: str) -> None:
             return
         # 1. Fetch the content and the uploader
         content = db.query(models.Content).filter(models.Content.id == content_id).first()
-        uploader = db.query(models.User).filter(models.User.id == uploader_id).first()
-        if not content or not uploader:
-            print("[EmailService] Skipping: content or uploader not found.")
+        if not content:
+            print("[EmailService] Skipping: content not found.")
             return
+            
+        uploader = None
+        if uploader_id:
+            uploader = db.query(models.User).filter(models.User.id == uploader_id).first()
 
         module = db.query(models.Module).filter(models.Module.id == content.module_id).first()
         if not module:
@@ -68,13 +71,16 @@ def send_content_notification_emails(content_id: str, uploader_id: str) -> None:
 
         # 4. Build the email with proper headers (required for Microsoft 365 delivery)
         content_type_label = content.content_type.name.title()  # "Video" or "Document"
+        
+        uploader_name = uploader.full_name if uploader else "System Administrator"
+        reply_to_email = (uploader.company_email or uploader.email) if uploader else SMTP_USER
 
         msg = EmailMessage()
         msg["Subject"] = f"New Training Assigned: {content.title}"
         msg["From"] = f"Nagarkot Training Platform <{SMTP_USER}>"
         msg["To"] = SMTP_USER
         msg["Bcc"] = ", ".join(recipients)
-        msg["Reply-To"] = uploader.company_email or uploader.email
+        msg["Reply-To"] = reply_to_email
         msg["Message-ID"] = f"<{uuid.uuid4()}@nagarkot-training.local>"
         msg["Date"] = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S %z")
 
@@ -84,7 +90,7 @@ def send_content_notification_emails(content_id: str, uploader_id: str) -> None:
             f"A new {content_type_label.lower()} has been added to your assigned training track.\n\n"
             f"Resource: {content.title}\n"
             f"Module: {module.title}\n"
-            f"Added by: {uploader.full_name}\n\n"
+            f"Added by: {uploader_name}\n\n"
             f"Please log in to review the material at your earliest convenience here:\n"
             f"https://trainings.cloud.nagarkot.co.in/\n\n"
             f"Regards,\n"
@@ -98,12 +104,13 @@ def send_content_notification_emails(content_id: str, uploader_id: str) -> None:
             f"<p>Hello,</p>"
             f"<p>A new {content_type_label.lower()} has been added to your assigned training track.</p>"
             f"<ul style='list-style-type: none; padding-left: 0;'>"
-            f"<li style='margin-bottom: 4px;'><strong>Resource:</strong> {content.title}</li>"
-            f"<li style='margin-bottom: 4px;'><strong>Module:</strong> {module.title}</li>"
-            f"<li style='margin-bottom: 4px;'><strong>Added by:</strong> {uploader.full_name}</li>"
+            f"<li><strong>Resource:</strong> {content.title}</li>"
+            f"<li><strong>Module:</strong> {module.title}</li>"
+            f"<li><strong>Added by:</strong> {uploader_name}</li>"
             f"</ul>"
-            f"<p>Please log in to review the material at your earliest convenience here:<br>"
-            f"<a href='https://trainings.cloud.nagarkot.co.in/' style='color: #0056b3;'>https://trainings.cloud.nagarkot.co.in/</a></p>"
+            f"<p>Please log in to review the material at your earliest convenience here:</p>"
+            f"<p><a href='https://trainings.cloud.nagarkot.co.in/'>https://trainings.cloud.nagarkot.co.in/</a></p>"
+            f"<br>"
             f"<p>Regards,<br>Nagarkot Training Platform</p>"
             f"</body>"
             f"</html>"

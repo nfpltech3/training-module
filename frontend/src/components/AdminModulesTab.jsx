@@ -14,7 +14,7 @@ import { useAuth } from '../lib/AuthContext';
 import {
     Plus, Search, Edit2, Trash2, GripVertical,
     Video, FileText,
-    Upload, Loader2, X, CheckCircle2, Clock, ChevronLeft,
+    Upload, Loader2, X, Check, CheckCircle2, Clock, ChevronLeft,
     BookOpen, Layers, ExternalLink, Eye, RotateCcw, Archive,
     FileSpreadsheet, FileCode, FileJson, FileType, FileBarChart,
     Mail, MoreHorizontal
@@ -120,6 +120,8 @@ export default function AdminModulesTab() {
     const [uploadFile, setUploadFile] = useState(null);
     const [isCreatingContent, setIsCreatingContent] = useState(false);
     const [contentValidationError, setContentValidationError] = useState('');
+    const [showScheduleInline, setShowScheduleInline] = useState(false);
+    const [scheduleDateTime, setScheduleDateTime] = useState('');
     const [notifyUsers, setNotifyUsers] = useState(false);
 
     // Video duration verification state
@@ -384,8 +386,9 @@ export default function AdminModulesTab() {
         }
     };
 
-    const handleCreateContent = async (e) => {
-        e.preventDefault();
+    const handleCreateContent = async (e, options = {}) => {
+        if (e) e.preventDefault();
+        const { status = 'published', scheduled_publish_at = null } = options;
         setContentValidationError('');
 
         if (!contentForm.title.trim()) {
@@ -444,12 +447,16 @@ export default function AdminModulesTab() {
                 module_id: selectedModuleId, 
                 document_url: documentUrl,
                 total_duration: finalDuration,
-                notify_users: notifyUsers
+                notify_users: notifyUsers,
+                status,
+                scheduled_publish_at
             });
             
             setContentForm({ title: '', description: '', content_type: 'VIDEO', embed_url: '', total_duration: 0, additional_notes: '' });
             setUploadFile(null);
             setNotifyUsers(false);
+            setShowScheduleInline(false);
+            setScheduleDateTime('');
             setSuccessMessage(notifyUsers ? 'Content added & notifications sent!' : 'Content added successfully!');
             const modRes = await getAdminModules();
             setModules(modRes.data);
@@ -542,6 +549,17 @@ export default function AdminModulesTab() {
             setModules(modRes.data);
         } catch (err) {
             alert(err?.response?.data?.detail || "Failed to delete content permanently.");
+        }
+    };
+
+    const handleCancelSchedule = async (id) => {
+        try {
+            await updateContent(id, { status: 'cancelled' });
+            setSuccessMessage('Schedule cancelled.');
+            const modRes = await getAdminModules();
+            setModules(modRes.data);
+        } catch (err) {
+            alert(err?.response?.data?.detail || "Failed to cancel schedule.");
         }
     };
 
@@ -962,13 +980,60 @@ export default function AdminModulesTab() {
                                                 Sends a notification to all assigned users when this item is published.
                                             </p>
                                         </div>
-                                        <button 
-                                            type="submit" disabled={isCreatingContent}
-                                            className="w-full md:w-auto px-6 py-3 md:py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition flex justify-center items-center gap-2 shadow-lg shadow-blue-100 disabled:opacity-50 mt-4 md:mt-0"
-                                        >
-                                            {isCreatingContent ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                                            Add Item
-                                        </button>
+                                        
+                                        {showScheduleInline && (
+                                            <div className="md:col-span-3 bg-slate-50 border border-slate-200 rounded-xl p-4 mt-2 animate-in fade-in slide-in-from-top-2">
+                                                <div className="flex flex-col gap-2">
+                                                    <label className="text-sm font-bold text-slate-700">Publish date & time</label>
+                                                    <input 
+                                                        type="datetime-local" 
+                                                        value={scheduleDateTime}
+                                                        onChange={(e) => setScheduleDateTime(e.target.value)}
+                                                        className="px-3 py-2 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none max-w-sm"
+                                                    />
+                                                    <p className="text-xs text-slate-500">This video will stay hidden until this date and time, then publish automatically and notify assigned users.</p>
+                                                    
+                                                    {scheduleDateTime && new Date(scheduleDateTime) <= new Date() && (
+                                                        <p className="text-xs font-semibold text-red-500 mt-1">Publish time must be in the future.</p>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        <div className="md:col-span-3 flex flex-col md:flex-row gap-2 w-full mt-4 justify-end">
+                                            <button 
+                                                type="submit" disabled={isCreatingContent}
+                                                className="w-full md:w-auto px-6 py-3 md:py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition flex justify-center items-center gap-2 shadow-lg shadow-blue-100 disabled:opacity-50"
+                                            >
+                                                {isCreatingContent ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                                                Publish Now
+                                            </button>
+                                            
+                                            <button 
+                                                type="button" disabled={isCreatingContent || (showScheduleInline && (!scheduleDateTime || new Date(scheduleDateTime) <= new Date()))}
+                                                onClick={() => {
+                                                    if (!showScheduleInline) {
+                                                        setShowScheduleInline(true);
+                                                    } else {
+                                                        handleCreateContent(null, { status: 'scheduled', scheduled_publish_at: new Date(scheduleDateTime).toISOString() });
+                                                    }
+                                                }}
+                                                className="w-full md:w-auto px-6 py-3 md:py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition flex justify-center items-center gap-2 shadow-lg shadow-indigo-100 disabled:opacity-50"
+                                            >
+                                                {isCreatingContent ? <Loader2 className="w-4 h-4 animate-spin" /> : (showScheduleInline ? <Check className="w-4 h-4" /> : <Clock className="w-4 h-4" />)}
+                                                {showScheduleInline ? "Confirm Schedule" : "Schedule"}
+                                            </button>
+                                            
+                                            {showScheduleInline && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowScheduleInline(false)}
+                                                    className="w-full md:w-auto px-4 py-3 md:py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition"
+                                                >
+                                                    Cancel
+                                                </button>
+                                            )}
+                                        </div>
                                     </div>
                                 </form>
                             </div>
@@ -1058,6 +1123,16 @@ export default function AdminModulesTab() {
                                                                                             Archived
                                                                                         </span>
                                                                                     )}
+                                                                                    {item.status === 'scheduled' && (
+                                                                                        <span className="px-2 py-0.5 rounded border border-indigo-200 bg-indigo-50 text-[10px] font-bold text-indigo-500 uppercase tracking-wider shrink-0">
+                                                                                            Scheduled: {(() => {
+                                                                                                const dStr = item.scheduled_publish_at;
+                                                                                                const hasTz = dStr.endsWith('Z') || /[+-]\d{2}:?\d{2}$/.test(dStr);
+                                                                                                const dateObj = new Date(dStr + (hasTz ? '' : 'Z'));
+                                                                                                return format(dateObj, 'MMM d, h:mm a');
+                                                                                            })()}
+                                                                                        </span>
+                                                                                    )}
                                                                                 </div>
                                                                                 
                                                                                 <div className="flex flex-wrap items-center gap-2 mt-1 md:mt-0.5">
@@ -1134,6 +1209,15 @@ export default function AdminModulesTab() {
                                                                                         >
                                                                                             <Archive className="w-4 h-4" />
                                                                                         </button>
+                                                                                        {item.status === 'scheduled' && (
+                                                                                            <button
+                                                                                                onClick={() => handleCancelSchedule(item.id)}
+                                                                                                className="text-slate-400 md:text-indigo-500 opacity-100 md:opacity-0 md:group-hover:opacity-100 hover:bg-indigo-50 rounded-lg p-1.5 md:p-2 transition"
+                                                                                                title="Cancel Schedule"
+                                                                                            >
+                                                                                                <X className="w-4 h-4" />
+                                                                                            </button>
+                                                                                        )}
                                                                                     </>
                                                                                 ) : (
                                                                                     <div className="flex items-center gap-3 md:gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity w-full justify-end">
@@ -1420,6 +1504,8 @@ export default function AdminModulesTab() {
                     </div>
                 </div>
             )}
+
+
 
             {/* --- Hidden Video Length Validator --- */}
             {verifyingVideoUrl && (

@@ -76,6 +76,8 @@ class ContentBase(BaseModel):
 
 class ContentCreate(ContentBase):
     notify_users: bool = False
+    status: Literal["published", "scheduled"] = "published"
+    scheduled_publish_at: Optional[datetime] = None
 
 
 class ContentUpdate(BaseModel):
@@ -89,16 +91,46 @@ class ContentUpdate(BaseModel):
     total_duration: Optional[int] = None
     additional_notes: Optional[str] = None
     is_active: Optional[bool] = None
+    status: Optional[str] = None
+    scheduled_publish_at: Optional[datetime] = None
+    published_at: Optional[datetime] = None
 
 
 class ContentResponse(ContentBase):
     id: str
+    status: str
+    scheduled_publish_at: Optional[datetime] = None
+    published_at: Optional[datetime] = None
     is_active: bool
     created_at: datetime
     updated_at: datetime
 
     class Config:
         from_attributes = True
+
+
+class ScheduledContentResponse(ContentResponse):
+    module_title: str
+    department_slugs: List[str] = []
+    roles: List[RoleResponse] = []
+    source: str  # "Sheet" or "Manual"
+
+
+class BulkActionRequest(BaseModel):
+    action: Literal["cancel"]
+    content_ids: List[str]
+
+
+class BulkCreateItem(BaseModel):
+    title: str
+    description: Optional[str] = None
+    embed_url: str
+    module_id: str
+    scheduled_publish_at: datetime
+
+
+class BulkCreateRequest(BaseModel):
+    items: List[BulkCreateItem]
 
 
 # --- Module Schemas ---

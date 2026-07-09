@@ -1,7 +1,7 @@
 import os
 import shutil
 import httpx
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 
 from fastapi import FastAPI, Depends, HTTPException, Request, Response, UploadFile, File, Header, status, BackgroundTasks
@@ -76,7 +76,7 @@ def cleanup_old_sso_tokens():
     """
     db = SessionLocal()
     try:
-        cutoff = datetime.utcnow() - timedelta(hours=24)
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
         deleted = (
             db.query(models.SsoTokenLog)
             .filter(models.SsoTokenLog.consumed_at < cutoff)
@@ -94,6 +94,10 @@ def cleanup_old_sso_tokens():
 
 scheduler = BackgroundScheduler()
 scheduler.add_job(cleanup_old_sso_tokens, "interval", hours=1, id="sso_token_log_cleanup")
+
+# Import jobs locally to avoid circular imports if needed, but we can import at top
+from .scheduler_jobs import sweep_scheduled_content
+scheduler.add_job(sweep_scheduled_content, "interval", minutes=1, id="sweep_scheduled_content")
 
 
 # --- Startup: start background scheduler only ---
@@ -630,7 +634,7 @@ def get_modules(
             "org_ids": [c.org_id for c in m.client_orgs],
             "roles": m.roles,
             "content_items": m.content_items if admin_view else [
-                c for c in m.content_items if c.is_active
+                c for c in m.content_items if c.is_active and c.status == "published"
             ],
             "is_active": m.is_active,
             "created_at": m.created_at
@@ -949,12 +953,12 @@ def create_content(
     db.commit()
     db.refresh(db_content)
 
-    if content.notify_users:
+    if content.notify_users and db_content.status == "published":
         background_tasks.add_task(
             email_service.send_content_notification_emails,
             db_content.id,
             admin.id
-    )
+        )
 
     return db_content
 
@@ -1130,6 +1134,128 @@ def delete_content_permanently(
     return {"detail": "Content permanently deleted", "id": content_id}
 
 
+@app.get("/admin/scheduled-content", response_model=List[schemas.ScheduledContentResponse])
+def get_scheduled_content(
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(require_manager)
+):
+    """Fetch all scheduled content across all modules for the global Scheduled view."""
+    # Base query for scheduled, active content
+    query = db.query(models.Content).options(
+        joinedload(models.Content.module).joinedload(models.Module.departments).joinedload(models.ModuleDepartment.department),
+        joinedload(models.Content.module).joinedload(models.Module.roles)
+    ).filter(
+        models.Content.status.in_(["scheduled", "published"]),
+        models.Content.scheduled_publish_at != None,
+        models.Content.is_active == True
+    ).order_by(models.Content.scheduled_publish_at.asc())
+
+    # Filter based on manager's department if they are a TEAM LEAD
+    user_role_name = admin.role.name.upper()
+    if user_role_name == "TEAM LEAD":
+        if admin.department_slug:
+            query = query.filter(models.Content.module.has(
+                models.Module.departments.any(
+                    models.ModuleDepartment.department.has(models.Department.slug == admin.department_slug)
+                )
+            ))
+        else:
+            return []
+
+    items = query.all()
+
+    # Map to schema
+    results = []
+    for item in items:
+        # Resolve module details
+        module = item.module
+        department_slugs = [d.department.slug for d in module.departments if d.department] if module else []
+        roles = module.roles if module else []
+        module_title = module.title if module else "Unknown Module"
+        source = "Manual"
+
+        item_dict = item.__dict__.copy()
+        item_dict["module_title"] = module_title
+        item_dict["department_slugs"] = department_slugs
+        item_dict["roles"] = roles
+        item_dict["source"] = source
+        results.append(item_dict)
+
+    return results
+
+
+@app.post("/admin/scheduled-content/bulk")
+def bulk_manage_scheduled_content(
+    payload: schemas.BulkActionRequest,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(require_manager)
+):
+    """Handle bulk actions for scheduled content (e.g. bulk cancel)."""
+    if payload.action == "cancel":
+        # We soft-delete (archive) the content to perfectly mirror the inline Cancel action
+        contents = db.query(models.Content).filter(
+            models.Content.id.in_(payload.content_ids),
+            models.Content.status == "scheduled"
+        ).all()
+
+        for content in contents:
+            content.is_active = False
+            content.sequence_index = 0
+            
+            # Re-index siblings for each affected module
+            module_id = content.module_id
+            remaining = db.query(models.Content).filter(
+                models.Content.module_id == module_id,
+                models.Content.is_active == True,
+                models.Content.id != content.id,
+            ).order_by(models.Content.sequence_index).all()
+            for idx, item in enumerate(remaining, start=1):
+                item.sequence_index = idx
+
+        db.commit()
+        return {"detail": f"Successfully cancelled {len(contents)} scheduled items."}
+
+    raise HTTPException(status_code=400, detail="Invalid action")
+
+
+@app.post("/admin/scheduled-content/bulk-create")
+def bulk_create_scheduled_content(
+    payload: schemas.BulkCreateRequest,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(require_manager)
+):
+    """Handle bulk creation of scheduled content."""
+    
+    # We will wrap it in a try-except so it is atomic.
+    # db.add() adds to session, db.commit() commits the entire transaction.
+    created_items = []
+    try:
+        for item in payload.items:
+            max_seq = db.query(func.max(models.Content.sequence_index)).filter(
+                models.Content.module_id == item.module_id
+            ).scalar() or 0
+            
+            db_content = models.Content(
+                title=item.title,
+                description=item.description,
+                content_type=models.ContentTypeEnum.VIDEO,
+                embed_url=item.embed_url,
+                module_id=item.module_id,
+                status="scheduled",
+                scheduled_publish_at=item.scheduled_publish_at,
+                sequence_index=max_seq + 1
+            )
+            db.add(db_content)
+            created_items.append(db_content)
+        
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+        
+    return {"detail": f"Successfully scheduled {len(created_items)} items."}
+
+
 # =====================================================================
 #  PROGRESS
 # =====================================================================
@@ -1148,7 +1274,7 @@ def update_progress(
             content_id=progress.content_id,
             furthest_second_watched=progress.furthest_second_watched,
             is_completed=progress.is_completed,
-            completed_at=datetime.utcnow() if progress.is_completed else None,
+            completed_at=datetime.now(timezone.utc) if progress.is_completed else None,
         )
         db.add(db_progress)
     else:
@@ -1156,7 +1282,7 @@ def update_progress(
             db_progress.furthest_second_watched = progress.furthest_second_watched
         if progress.is_completed and not db_progress.is_completed:
             db_progress.is_completed = True
-            db_progress.completed_at = datetime.utcnow()
+            db_progress.completed_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(db_progress)
     return db_progress
@@ -1209,7 +1335,8 @@ def admin_report_summary(
         visible_content_query = db.query(models.Content.id).join(models.Module).filter(
             models.Module.roles.any(models.Role.name == user_role_name),
             models.Module.is_active == True,
-            models.Content.is_active == True
+            models.Content.is_active == True,
+            models.Content.status == "published"
         )
         
         if user_role_name == "ADMIN":
@@ -1319,7 +1446,7 @@ def admin_report_export_data(
                         
             # Module is visible, add all active content
             for content in module.content_items:
-                if not content.is_active:
+                if not content.is_active or content.status != "published":
                     continue
                     
                 prog = progress_by_user.get(user.id, {}).get(content.id)
@@ -1362,7 +1489,8 @@ def admin_report_user_detail(
     base_query = db.query(models.Content, models.Module).join(models.Module).filter(
         models.Module.roles.any(models.Role.name == target_role_name),
         models.Module.is_active == True,
-        models.Content.is_active == True
+        models.Content.is_active == True,
+        models.Content.status == "published"
     )
     
     if target_role_name == "ADMIN":

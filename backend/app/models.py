@@ -1,10 +1,29 @@
 import uuid
 import enum
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import Column, String, Boolean, Integer, ForeignKey, DateTime, Enum, Text, Table, UniqueConstraint
+from sqlalchemy.types import TypeDecorator
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from .database import Base
+
+class UTCDateTime(TypeDecorator):
+    """
+    SQLAlchemy TypeDecorator that ensures timezone-aware datetimes (UTC) 
+    are properly stored and retrieved from naive databases (like SQLite).
+    """
+    impl = DateTime
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if value is not None:
+            if value.tzinfo is None:
+                value = value.replace(tzinfo=timezone.utc)
+            return value.astimezone(timezone.utc).replace(tzinfo=None)
+
+    def process_result_value(self, value, dialect):
+        if value is not None:
+            return value.replace(tzinfo=timezone.utc)
 
 def generate_uuid():
     return str(uuid.uuid4())
@@ -33,8 +52,8 @@ class Department(Base):
     slug = Column(String, unique=True, index=True, nullable=False)
     name = Column(String, nullable=False)
     status = Column(String, default='active')  # 'active' | 'deleted'
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(UTCDateTime, default=datetime.utcnow)
+    updated_at = Column(UTCDateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 # Maps modules to local departments via FK (guarantees referential integrity)
 class ModuleDepartment(Base):
@@ -81,7 +100,7 @@ class User(Base):
     role_id = Column(String, ForeignKey("roles.id", ondelete="RESTRICT"), nullable=False)
     role = relationship("Role")
     status = Column(String, default="active", nullable=False)  # 'active' | 'disabled' | 'deleted'
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(UTCDateTime, default=datetime.utcnow)
 
     @property
     def is_active(self):
@@ -104,8 +123,8 @@ class Module(Base):
     
     sequence_index = Column(Integer, default=0)
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(UTCDateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(UTCDateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     content_items = relationship(
         "Content", back_populates="module",
@@ -127,8 +146,13 @@ class Content(Base):
     total_duration = Column(Integer, nullable=True)  
     additional_notes = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    
+    status = Column(String, default="published", nullable=False)
+    scheduled_publish_at = Column(UTCDateTime, nullable=True)
+    published_at = Column(UTCDateTime, nullable=True)
+    
+    created_at = Column(UTCDateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(UTCDateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
 class UserProgress(Base):
     __tablename__ = "user_progress"
@@ -141,18 +165,18 @@ class UserProgress(Base):
     content_id = Column(String, ForeignKey("content.id", ondelete="CASCADE"), nullable=False)
     furthest_second_watched = Column(Integer, default=0) 
     is_completed = Column(Boolean, default=False)
-    completed_at = Column(DateTime, nullable=True)
-    last_accessed_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    completed_at = Column(UTCDateTime, nullable=True)
+    last_accessed_at = Column(UTCDateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 class SsoTokenLog(Base):
     __tablename__ = "sso_token_log"
     token_id = Column(String, primary_key=True)
     used = Column(Boolean, default=True)
-    consumed_at = Column(DateTime, default=datetime.utcnow, index=True)
+    consumed_at = Column(UTCDateTime, default=datetime.utcnow, index=True)
     app_slug = Column(String, nullable=True)
 
 class AppSetting(Base):
     __tablename__ = "app_settings"
     setting_key = Column(String, primary_key=True)
     setting_value = Column(String, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = Column(UTCDateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

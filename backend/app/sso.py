@@ -7,7 +7,7 @@ the app works exactly as before.
 """
 
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 import httpx
@@ -103,7 +103,7 @@ def sso_login(request: Request, body: SsoRequest, response: Response, db: Sessio
             models.SsoTokenLog(
                 token_id=token_id,
                 used=True,
-                consumed_at=datetime.utcnow(),
+                consumed_at=datetime.now(timezone.utc),
                 app_slug="trainings",
             )
         )

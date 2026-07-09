@@ -89,6 +89,10 @@ export const uploadDocument = (file) => {
     });
 };
 
+export const getScheduledContent = () => api.get('/admin/scheduled-content');
+export const bulkManageScheduledContent = (data) => api.post('/admin/scheduled-content/bulk', data);
+export const bulkCreateScheduledContent = (data) => api.post('/admin/scheduled-content/bulk-create', data);
+
 // =====================================================================
 //  PROGRESS
 // =====================================================================

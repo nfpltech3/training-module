@@ -13,6 +13,8 @@ import LoginPage from './pages/LoginPage';
 import LearnerDashboard from './pages/LearnerDashboard';
 import ModuleViewer from './pages/ModuleViewer';
 import AdminDashboard from './pages/AdminDashboard';
+import AdminModulesTab from './components/AdminModulesTab';
+import AdminScheduledTab from './components/AdminScheduledTab';
 import AdminReports from './pages/AdminReports';
 import AdminSettings from './pages/AdminSettings';
 import SsoPage from './pages/SsoPage';
@@ -46,7 +48,11 @@ export default function App() {
                   <AdminDashboard />
                 </ProtectedRoute>
               }
-            />
+            >
+              <Route index element={<Navigate to="modules" replace />} />
+              <Route path="modules" element={<AdminModulesTab />} />
+              <Route path="scheduled" element={<AdminScheduledTab />} />
+            </Route>
             <Route
               path="admin/reports"
               element={
