@@ -1,6 +1,7 @@
 from pydantic import BaseModel, EmailStr
 from typing import Optional, List, Literal
 from datetime import datetime
+from pydantic import AwareDatetime
 from .models import ModuleTypeEnum, ContentTypeEnum
 
 
@@ -77,7 +78,7 @@ class ContentBase(BaseModel):
 class ContentCreate(ContentBase):
     notify_users: bool = False
     status: Literal["published", "scheduled"] = "published"
-    scheduled_publish_at: Optional[datetime] = None
+    scheduled_publish_at: Optional[AwareDatetime] = None
 
 
 class ContentUpdate(BaseModel):
@@ -92,8 +93,8 @@ class ContentUpdate(BaseModel):
     additional_notes: Optional[str] = None
     is_active: Optional[bool] = None
     status: Optional[str] = None
-    scheduled_publish_at: Optional[datetime] = None
-    published_at: Optional[datetime] = None
+    scheduled_publish_at: Optional[AwareDatetime] = None
+    published_at: Optional[AwareDatetime] = None
 
 
 class ContentResponse(ContentBase):
@@ -126,7 +127,7 @@ class BulkCreateItem(BaseModel):
     description: Optional[str] = None
     embed_url: str
     module_id: str
-    scheduled_publish_at: datetime
+    scheduled_publish_at: AwareDatetime
 
 
 class BulkCreateRequest(BaseModel):

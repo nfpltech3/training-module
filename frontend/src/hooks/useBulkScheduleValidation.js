@@ -56,82 +56,56 @@ export default function useBulkScheduleValidation(modules, existingItems = []) {
     }, []);
 
     /**
-     * Parse date strings into a Date object.
-     *
-     * Accepted formats (unambiguous only):
-     *   - yyyy-MM-dd       → ISO (2026-07-08)
-     *   - dd-MMM-yyyy      → Calendar picker output (08-Jul-2026)
-     *   - EEE, dd-MMM-yyyy → Canonical redisplay (Wed, 08-Jul-2026)
-     *
-     * Rejected (ambiguous):
-     *   - M/d/yyyy, d/M/yyyy, MM/dd/yyyy, etc.
-     *     These silently misparse across US vs non-US locales.
+     * Parse combined date/time strings into a Date object representing the correct UTC instant.
+     * Assumes the input string represents an IST (+05:30) time.
      */
-    const parseLenientDate = useCallback((dateStr) => {
+    const parseLenientDateTime = useCallback((dateStr) => {
         if (!dateStr) return null;
-        // Strip any trailing time component that may have leaked in
-        const str = dateStr.trim().replace(/ \d{2}:\d{2}:\d{2}$/, '');
+        let str = dateStr.trim();
         if (!str) return null;
 
-        const formats = ['yyyy-MM-dd', 'dd-MMM-yyyy', 'EEE, dd-MMM-yyyy'];
+        // Check if it's already a proper ISO UTC string
+        if (str.endsWith('Z') || str.includes('+00:00') || (str.includes('T') && str.includes('+'))) {
+            const d = new Date(str);
+            if (!isNaN(d)) return d;
+        }
+
+        str = str.toUpperCase();
+        // Normalize meridiem
+        if (str.match(/\d[AP]$/)) str = str.replace(/([AP])$/, ' $1M');
+        if (str.match(/\d[AP]M$/)) str = str.replace(/([AP]M)$/, ' $1');
+
+        const formats = [
+            'dd-MMM-yyyy, h:mm a',
+            'EEE, dd-MMM-yyyy, h:mm a',
+            'yyyy-MM-dd HH:mm',
+            'dd-MMM-yyyy h:mm a',
+            'yyyy-MM-dd h:mm a'
+        ];
         
         for (const fmt of formats) {
             const parsed = parse(str, fmt, new Date());
             if (!isNaN(parsed)) {
-                return parsed;
+                // `parsed` is a local JS Date. We extract the raw numbers to build an IST ISO string.
+                const year = parsed.getFullYear();
+                const month = String(parsed.getMonth() + 1).padStart(2, '0');
+                const day = String(parsed.getDate()).padStart(2, '0');
+                const hour = String(parsed.getHours()).padStart(2, '0');
+                const minute = String(parsed.getMinutes()).padStart(2, '0');
+                
+                const isoStringIST = `${year}-${month}-${day}T${hour}:${minute}:00+05:30`;
+                return new Date(isoStringIST);
             }
         }
         return null;
     }, []);
-
-    /**
-     * Parse time strings into a Date object (only hours/minutes matter).
-     *
-     * Accepts:
-     *   - 4:30 PM, 4:30PM, 4:30P, 4:30p  (12h with meridiem, flexible)
-     *   - 16:30                             (24h)
-     *
-     * Normalization pipeline:
-     *   1. Trim + uppercase
-     *   2. Single-letter meridiem → full: "4:23P" → "4:23 PM"
-     *   3. Missing space before meridiem: "4:23PM" → "4:23 PM"
-     *   4. Parse against ['h:mm a', 'H:mm', 'HH:mm']
-     */
-    const parseLenientTime = useCallback((timeStr) => {
-        if (!timeStr) return null;
-        let str = timeStr.trim().toUpperCase();
-        if (!str) return null;
-
-        // Step 1: Single-letter meridiem → full meridiem
-        // "4:23P" → "4:23 PM", "4:23A" → "4:23 AM"
-        if (str.match(/\d[AP]$/)) {
-            str = str.replace(/([AP])$/, ' $1M');
-        }
-        // Step 2: Missing space before full AM/PM
-        // "4:23PM" → "4:23 PM"
-        if (str.match(/\d[AP]M$/)) {
-            str = str.replace(/([AP]M)$/, ' $1');
-        }
-
-        const formats = ['h:mm a', 'H:mm', 'HH:mm'];
-        
-        for (const fmt of formats) {
-            const parsed = parse(str, fmt, new Date());
-            if (!isNaN(parsed)) {
-                return parsed;
-            }
-        }
-        return null;
-    }, []);
-
-
 
     /**
      * Validate a single row. Returns a field-to-error mapping.
      */
     const validateRow = useCallback((row, allRows = []) => {
         const isEmpty = !row.title && !row.embed_url && !row.module_title
-            && !row.publish_date && !row.publish_time && !row.description;
+            && !row.publish_at && !row.description;
         if (isEmpty) {
             return { status: 'Blank', errors: {}, warnings: {}, targets: '', parsedDate: null };
         }
@@ -158,10 +132,8 @@ export default function useBulkScheduleValidation(modules, existingItems = []) {
             if (!url.includes('youtube.com/') && !url.includes('youtu.be/')) {
                 errors.embed_url = 'Invalid YouTube URL.';
             }
-            // Batch-level duplicate check by video ID (ignores tracking params)
             const thisVideoId = extractYouTubeVideoId(url);
             if (thisVideoId) {
-                // Check against existing items (scheduled/published)
                 const existsInDb = existingItems.some(i => extractYouTubeVideoId(i.embed_url) === thisVideoId);
                 if (existsInDb) {
                     errors.embed_url = 'This YouTube video is already scheduled or uploaded.';
@@ -177,39 +149,16 @@ export default function useBulkScheduleValidation(modules, existingItems = []) {
             }
         }
 
-        // --- Date / Time ---
+        // --- Publish At ---
         let parsedDate = null;
-        let pDate = null;
-        let pTime = null;
-
-        if (!row.publish_date?.trim()) {
-            errors.publish_date = 'Publish Date is required.';
+        if (!row.publish_at?.trim()) {
+            errors.publish_at = 'Publish At is required.';
         } else {
-            pDate = parseLenientDate(row.publish_date);
-            if (!pDate) errors.publish_date = 'Invalid date — use DD-MMM-YYYY (e.g. 08-Jul-2026).';
-        }
-
-        if (!row.publish_time?.trim()) {
-            errors.publish_time = 'Publish Time is required.';
-        } else {
-            pTime = parseLenientTime(row.publish_time);
-            if (!pTime) errors.publish_time = 'Invalid time — use H:MM AM/PM (e.g. 4:30 PM).';
-        }
-
-        if (pDate && pTime) {
-            const year = pDate.getFullYear();
-            const month = String(pDate.getMonth() + 1).padStart(2, '0');
-            const day = String(pDate.getDate()).padStart(2, '0');
-            const hour = String(pTime.getHours()).padStart(2, '0');
-            const minute = String(pTime.getMinutes()).padStart(2, '0');
-            
-            // Force the time to be treated as IST (+05:30) regardless of the browser's local timezone.
-            const isoStringIST = `${year}-${month}-${day}T${hour}:${minute}:00+05:30`;
-            parsedDate = new Date(isoStringIST);
-            
-            if (!isFuture(parsedDate)) {
-                errors.publish_date = 'Scheduled time must be in the future.';
-                errors.publish_time = 'Scheduled time must be in the future.';
+            parsedDate = parseLenientDateTime(row.publish_at);
+            if (!parsedDate) {
+                errors.publish_at = 'Invalid format. Use DD-MMM-YYYY, H:MM AM/PM';
+            } else if (!isFuture(parsedDate)) {
+                errors.publish_at = 'Scheduled time must be in the future.';
             }
         }
 
@@ -218,7 +167,7 @@ export default function useBulkScheduleValidation(modules, existingItems = []) {
         const status = Object.keys(errors).length > 0 ? 'Error' : 'Valid';
 
         return { status, errors, warnings, targets, parsedDate };
-    }, [resolveModule, buildTargetsString, parseLenientDate, parseLenientTime, existingItems]);
+    }, [resolveModule, buildTargetsString, parseLenientDateTime, existingItems]);
 
     /**
      * Validate every row in a batch.
@@ -237,5 +186,5 @@ export default function useBulkScheduleValidation(modules, existingItems = []) {
         });
     }, [validateRow]);
 
-    return { validateAll, validateRow, resolveModule, buildTargetsString, moduleTitles, parseLenientDate, parseLenientTime };
+    return { validateAll, validateRow, resolveModule, buildTargetsString, moduleTitles, parseLenientDateTime };
 }

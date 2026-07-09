@@ -10,20 +10,22 @@ from .database import Base
 class UTCDateTime(TypeDecorator):
     """
     SQLAlchemy TypeDecorator that ensures timezone-aware datetimes (UTC) 
-    are properly stored and retrieved from naive databases (like SQLite).
+    are properly stored and retrieved.
     """
-    impl = DateTime
+    impl = DateTime(timezone=True)
     cache_ok = True
 
     def process_bind_param(self, value, dialect):
         if value is not None:
             if value.tzinfo is None:
                 value = value.replace(tzinfo=timezone.utc)
-            return value.astimezone(timezone.utc).replace(tzinfo=None)
+            return value.astimezone(timezone.utc)
 
     def process_result_value(self, value, dialect):
         if value is not None:
-            return value.replace(tzinfo=timezone.utc)
+            if value.tzinfo is None:
+                return value.replace(tzinfo=timezone.utc)
+            return value
 
 def generate_uuid():
     return str(uuid.uuid4())

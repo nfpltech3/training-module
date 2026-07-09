@@ -10,7 +10,7 @@ import { Loader2, Trash2, UploadCloud, AlertCircle } from 'lucide-react';
 import useBulkScheduleValidation, { extractYouTubeVideoId } from '../hooks/useBulkScheduleValidation';
 
 import ModuleFormModal from './ModuleFormModal';
-import InlineTimeEditor from './InlineTimeEditor';
+import InlineDateTimeEditor from './InlineDateTimeEditor';
 
 import 'jspreadsheet-ce/dist/jspreadsheet.css';
 import { formatInTimeZone } from 'date-fns-tz';
@@ -63,12 +63,11 @@ const COL = {
     DESCRIPTION: 1,
     YOUTUBE: 2,
     MODULE: 3,
-    DATE: 4,
-    TIME: 5,
-    STATUS: 6,
-    ID: 7,
-    DEPS: 8,
-    ROLES: 9
+    PUBLISH_AT: 4,
+    STATUS: 5,
+    ID: 6,
+    DEPS: 7,
+    ROLES: 8
 };
 
 const FIELD_TO_COL = {
@@ -76,8 +75,7 @@ const FIELD_TO_COL = {
     description: COL.DESCRIPTION,
     embed_url: COL.YOUTUBE,
     module_title: COL.MODULE,
-    publish_date: COL.DATE,
-    publish_time: COL.TIME
+    publish_at: COL.PUBLISH_AT
 };
 
 const INITIAL_ROW_COUNT = 15;
@@ -116,9 +114,9 @@ const AdminUnifiedScheduleGrid = ({ items, onSuccess }) => {
     const triggerCellRef = useRef(null);
 
     // Time editor state
-    const [activeTimeCell, setActiveTimeCell] = useState(null); // { rowIdx, rect }
+    const [activeDateTimeCell, setActiveDateTimeCell] = useState(null); // { rowIdx, rect }
 
-    const { validateAll, resolveModule, parseLenientDate, parseLenientTime } = useBulkScheduleValidation(modules, items);
+    const { validateAll, resolveModule, parseLenientDateTime } = useBulkScheduleValidation(modules, items);
 
     // Fetch initial data
     const fetchModules = async () => {
@@ -157,8 +155,7 @@ const AdminUnifiedScheduleGrid = ({ items, onSuccess }) => {
 
     // Format Scheduled Row Data
     const formatRowData = useCallback((item) => {
-        let publishDate = '';
-        let publishTime = '';
+        let publishAtStr = '';
         
         const isPublished = item.status === 'published' || item.status === 'UPLOADED';
         const displayDateStr = (isPublished && item.published_at) ? item.published_at : item.scheduled_publish_at;
@@ -166,8 +163,7 @@ const AdminUnifiedScheduleGrid = ({ items, onSuccess }) => {
         if (displayDateStr) {
             const hasTz = displayDateStr.endsWith('Z') || /[+-]\d{2}:?\d{2}$/.test(displayDateStr);
             const dateObj = new Date(displayDateStr + (hasTz ? '' : 'Z'));
-            publishDate = formatInTimeZone(dateObj, IST_TIMEZONE, 'EEE, dd-MMM-yyyy');
-            publishTime = formatInTimeZone(dateObj, IST_TIMEZONE, 'h:mm a');
+            publishAtStr = formatInTimeZone(dateObj, IST_TIMEZONE, 'dd-MMM-yyyy, h:mm a');
         }
 
         const statusHtml = isPublished
@@ -179,12 +175,11 @@ const AdminUnifiedScheduleGrid = ({ items, onSuccess }) => {
             item.description || '',
             item.embed_url || '',
             item.module_title || '',
-            publishDate,
-            publishTime,
+            publishAtStr,
             statusHtml,
-            item.id, // Hidden ID column [7]
-            JSON.stringify(item.department_slugs || []), // Hidden deps [8]
-            JSON.stringify(item.roles || []) // Hidden roles [9]
+            item.id, // Hidden ID column
+            JSON.stringify(item.department_slugs || []), // Hidden deps
+            JSON.stringify(item.roles || []) // Hidden roles
         ];
     }, []);
 
@@ -203,7 +198,7 @@ const AdminUnifiedScheduleGrid = ({ items, onSuccess }) => {
         } else {
             // Initial blank draft rows
             for (let i = 0; i < INITIAL_ROW_COUNT; i++) {
-                data.push(['', '', '', '', '', '', '', '', '', '']);
+                data.push(['', '', '', '', '', '', '', '', '']);
             }
         }
 
@@ -221,8 +216,7 @@ const AdminUnifiedScheduleGrid = ({ items, onSuccess }) => {
             description: row[COL.DESCRIPTION] || '',
             embed_url: row[COL.YOUTUBE] || '',
             module_title: row[COL.MODULE] || '',
-            publish_date: row[COL.DATE] || '',
-            publish_time: row[COL.TIME] || '',
+            publish_at: row[COL.PUBLISH_AT] || '',
             _targets: ''
         }));
     }, [items.length]);
@@ -278,29 +272,18 @@ const AdminUnifiedScheduleGrid = ({ items, onSuccess }) => {
                 updatePayload.module_id = resolved.id;
             }
         }
-        else if (colIdx === COL.DATE || colIdx === COL.TIME) {
-            const pDate = parseLenientDate(rowData[COL.DATE]);
-            const pTime = parseLenientTime(rowData[COL.TIME]);
+        else if (colIdx === COL.PUBLISH_AT) {
+            const parsedDate = parseLenientDateTime(newValue);
             
-            if (!pDate || !pTime) {
-                errorMsg = "Date and time are required for scheduled rows.";
+            if (!parsedDate) {
+                errorMsg = "Invalid date/time. Use DD-MMM-YYYY, H:MM AM/PM";
             } else {
-                const year = pDate.getFullYear();
-                const month = String(pDate.getMonth() + 1).padStart(2, '0');
-                const day = String(pDate.getDate()).padStart(2, '0');
-                const hour = String(pTime.getHours()).padStart(2, '0');
-                const minute = String(pTime.getMinutes()).padStart(2, '0');
-                const isoStringIST = `${year}-${month}-${day}T${hour}:${minute}:00+05:30`;
-                const parsedDate = new Date(isoStringIST);
-                
                 if (isFuture(parsedDate)) {
                     updatePayload.scheduled_publish_at = parsedDate.toISOString();
                     if (sheetRef.current) {
-                        ['DATE', 'TIME'].forEach(c => {
-                            const cellName = jspreadsheet.getColumnNameFromId([COL[c], rowIdx]);
-                            sheetRef.current.setStyle(cellName, 'background-color', '');
-                            sheetRef.current.setComments(cellName, '');
-                        });
+                        const cellName = jspreadsheet.getColumnNameFromId([COL.PUBLISH_AT, rowIdx]);
+                        sheetRef.current.setStyle(cellName, 'background-color', '');
+                        sheetRef.current.setComments(cellName, '');
                     }
                 } else {
                     errorMsg = "Scheduled time must be in the future.";
@@ -323,7 +306,7 @@ const AdminUnifiedScheduleGrid = ({ items, onSuccess }) => {
                 setInvalid(e.response?.data?.detail || "Failed to save changes on server.");
             }
         }
-    }, [resolveModule, parseLenientDate, parseLenientTime, items]);
+    }, [resolveModule, parseLenientDateTime, items]);
 
     const handleSingleSchedule = useCallback(async (rowIdx) => {
         if (submitting) return;
@@ -439,15 +422,14 @@ const AdminUnifiedScheduleGrid = ({ items, onSuccess }) => {
             data: data,
             columns: [
                 { type: 'text', title: 'Title', width: 220, wordWrap: true },
-                { type: 'text', title: 'Description', width: 350, wordWrap: true },
+                { type: 'text', title: 'Description', width: 450, wordWrap: true },
                 { type: 'text', title: 'YouTube Link', width: 220 },
                 { type: 'dropdown', title: 'Module', width: 160, source: moduleTitles },
-                { type: 'calendar', title: 'Publish Date', width: 150, options: { format: 'DD-MMM-YYYY' } },
-                { type: 'text', title: 'Publish Time', width: 100, readOnly: true },
+                { type: 'text', title: 'Publish At', width: 150, readOnly: true },
                 { type: 'html', title: 'Status', width: 120, readOnly: true },
-                { type: 'hidden', title: 'ID' }, // 7
-                { type: 'hidden', title: 'Deps' }, // 8
-                { type: 'hidden', title: 'Roles' } // 9
+                { type: 'hidden', title: 'ID' }, // 6
+                { type: 'hidden', title: 'Deps' }, // 7
+                { type: 'hidden', title: 'Roles' } // 8
             ],
             freezeColumns: 2,
             allowInsertRow: true,
@@ -488,7 +470,7 @@ const AdminUnifiedScheduleGrid = ({ items, onSuccess }) => {
                             }
                         }
                     } else {
-                        if (colIdx === COL.TIME) {
+                        if (colIdx === COL.PUBLISH_AT) {
                             cell.style.color = '#000000';
                             cell.style.cursor = 'pointer';
                             cell.style.pointerEvents = 'auto';
@@ -496,8 +478,8 @@ const AdminUnifiedScheduleGrid = ({ items, onSuccess }) => {
                     }
                 } else {
                     cell.parentElement.classList.remove('scheduled-row');
-                    // Ensure draft time cells are also explicitly clickable
-                    if (colIdx === COL.TIME) {
+                    // Ensure draft publish_at cells are also explicitly clickable
+                    if (colIdx === COL.PUBLISH_AT) {
                         cell.style.cursor = 'pointer';
                         cell.style.pointerEvents = 'auto';
                     }
@@ -551,8 +533,8 @@ const AdminUnifiedScheduleGrid = ({ items, onSuccess }) => {
                         const rowData = sheetRef.current ? sheetRef.current.getRowData(row) : data[row];
                         if (rowData) {
                             try {
-                                const deps = JSON.parse(rowData[8] || '[]');
-                                const rols = JSON.parse(rowData[9] || '[]');
+                                const deps = JSON.parse(rowData[7] || '[]');
+                                const rols = JSON.parse(rowData[8] || '[]');
                                 tooltipText = [...deps.map(d => d.toUpperCase()), ...rols.map(r => r.name.toUpperCase())].join(', ');
                             } catch {
                                 // Ignore
@@ -601,12 +583,9 @@ const AdminUnifiedScheduleGrid = ({ items, onSuccess }) => {
                 
                 // Canonical formatting for date/time
                 if (value) {
-                    if (colIdx === COL.DATE) {
-                        const pDate = parseLenientDate(value);
-                        if (pDate) return format(pDate, 'EEE, dd-MMM-yyyy');
-                    } else if (colIdx === COL.TIME) {
-                        const pTime = parseLenientTime(value);
-                        if (pTime) return format(pTime, 'h:mm a');
+                    if (colIdx === COL.PUBLISH_AT) {
+                        const parsedDate = parseLenientDateTime(value);
+                        if (parsedDate) return format(parsedDate, 'dd-MMM-yyyy, h:mm a');
                     }
                 }
                 
@@ -705,7 +684,7 @@ const AdminUnifiedScheduleGrid = ({ items, onSuccess }) => {
                 sheetRef.current = null;
             }
         };
-    }, [loading, modules, items, generateGridData, scheduleValidation, resolveModule, parseLenientDate, parseLenientTime, handleScheduledRowEdit]);
+    }, [loading, modules, items, generateGridData, scheduleValidation, resolveModule, parseLenientDateTime, handleScheduledRowEdit]);
 
     // Update dynamic module dropdown source
     useEffect(() => {
@@ -717,7 +696,20 @@ const AdminUnifiedScheduleGrid = ({ items, onSuccess }) => {
     // Attach click handler for custom HTML buttons and Time editor in the grid
     useEffect(() => {
         const handleGridClick = (e) => {
-            const btn = e.target.closest('.schedule-single-btn');
+            // Ensure target is an Element
+            const target = e.target instanceof Element ? e.target : e.target.parentElement;
+            if (!target) return;
+
+            // FIX: Stop the subsequent click event from bubbling to the document.
+            // This prevents "click-outside" hooks inside InlineDateTimeEditor from instantly firing.
+            const td = target.closest('td[data-x]');
+            if (td && parseInt(td.getAttribute('data-x'), 10) === COL.PUBLISH_AT) {
+                e.preventDefault();
+                e.stopPropagation(); 
+                return;
+            }
+
+            const btn = target.closest('.schedule-single-btn');
             if (btn) {
                 const rowIdx = parseInt(btn.getAttribute('data-row'), 10);
                 handleSingleSchedule(rowIdx);
@@ -725,15 +717,12 @@ const AdminUnifiedScheduleGrid = ({ items, onSuccess }) => {
         };
 
         const handleGridMouseDown = (e) => {
-            // Ensure target is an Element (Text nodes don't have .closest)
             const target = e.target instanceof Element ? e.target : e.target.parentElement;
             if (!target) return;
+            console.log('MouseDown Target:', target);
 
-            // Intercept clicks on the YouTube open-link icon
             const ytOpenIcon = target.closest('.yt-open-icon');
-            if (ytOpenIcon) {
-                return; // Already handled by the icon's own mousedown listener
-            }
+            if (ytOpenIcon) return;
 
             const td = target.closest('td[data-x]');
             if (td) {
@@ -742,14 +731,19 @@ const AdminUnifiedScheduleGrid = ({ items, onSuccess }) => {
                 if (!tr) return;
                 
                 const rowIdx = parseInt(tr.getAttribute('data-y'), 10);
+                console.log('MouseDown Cell Info:', { colIdx, rowIdx, COL_PUBLISH_AT: COL.PUBLISH_AT });
                 
-                if (colIdx === COL.TIME) {
+                if (colIdx === COL.PUBLISH_AT) {
                     const statusHtml = sheetRef.current.getValueFromCoords(COL.STATUS, rowIdx);
                     const isUploaded = typeof statusHtml === 'string' && statusHtml.includes('Uploaded');
+                    console.log('MouseDown Publish At Check:', { isUploaded, statusHtml });
                     
                     if (!isUploaded) {
-                        setActiveTimeCell({ rowIdx, rect: td.getBoundingClientRect() });
                         e.preventDefault();
+                        e.stopPropagation();
+                        const rect = td.getBoundingClientRect();
+                        console.log('Setting Active DateTime Cell:', { rowIdx, rect });
+                        setActiveDateTimeCell({ rowIdx, rect });
                     }
                 }
             }
@@ -759,9 +753,7 @@ const AdminUnifiedScheduleGrid = ({ items, onSuccess }) => {
             if (e.key === 'Backspace' || e.key === 'Delete') {
                 if (!containerRef.current || !sheetRef.current) return;
                 
-                // Jspreadsheet adds the "highlight" class to all selected cells.
-                // We only care about selected cells in the TIME column.
-                const highlightedTimeCells = containerRef.current.querySelectorAll(`td.highlight[data-x="${COL.TIME}"]`);
+                const highlightedTimeCells = containerRef.current.querySelectorAll(`td.highlight[data-x="${COL.PUBLISH_AT}"]`);
                 
                 let clearedAny = false;
                 highlightedTimeCells.forEach(td => {
@@ -770,30 +762,26 @@ const AdminUnifiedScheduleGrid = ({ items, onSuccess }) => {
                     const isUploaded = typeof statusHtml === 'string' && statusHtml.includes('Uploaded');
                     
                     if (!isUploaded) {
-                        sheetRef.current.setValueFromCoords(COL.TIME, r, '', true);
+                        sheetRef.current.setValueFromCoords(COL.PUBLISH_AT, r, '', true);
                         if (r < items.length) {
-                            handleScheduledRowEdit(r, COL.TIME, '');
+                            handleScheduledRowEdit(r, COL.PUBLISH_AT, '');
                         }
                         clearedAny = true;
                     }
                 });
-                
-                // If we explicitly cleared time cells, stop Jspreadsheet from doing any default action on them
-                // (though for readOnly columns it usually does nothing anyway, this prevents any side effects).
-                // Note: we don't prevent default if other editable columns were also selected, 
-                // so Jspreadsheet can still clear those natively.
             }
         };
 
         const el = containerRef.current;
         if (el) {
-            el.addEventListener('click', handleGridClick);
-            el.addEventListener('mousedown', handleGridMouseDown, true); // Capture phase!
-            el.addEventListener('keydown', handleGridKeyDown, true); // Capture phase!
+            // FIX: Ensure click is also handled in the capture phase (true)
+            el.addEventListener('click', handleGridClick, true); 
+            el.addEventListener('mousedown', handleGridMouseDown, true); 
+            el.addEventListener('keydown', handleGridKeyDown, true); 
         }
         return () => {
             if (el) {
-                el.removeEventListener('click', handleGridClick);
+                el.removeEventListener('click', handleGridClick, true);
                 el.removeEventListener('mousedown', handleGridMouseDown, true);
                 el.removeEventListener('keydown', handleGridKeyDown, true);
             }
@@ -980,17 +968,17 @@ const AdminUnifiedScheduleGrid = ({ items, onSuccess }) => {
                 <div ref={containerRef} />
             </div>
             
-            {activeTimeCell && (
-                <InlineTimeEditor
-                    rowIdx={activeTimeCell.rowIdx}
-                    rect={activeTimeCell.rect}
-                    initialValue={sheetRef.current.getValueFromCoords(COL.TIME, activeTimeCell.rowIdx)}
-                    parseLenientTime={parseLenientTime}
+            {activeDateTimeCell && (
+                <InlineDateTimeEditor
+                    rowIdx={activeDateTimeCell.rowIdx}
+                    rect={activeDateTimeCell.rect}
+                    initialValue={sheetRef.current.getValueFromCoords(COL.PUBLISH_AT, activeDateTimeCell.rowIdx)}
+                    parseLenientDateTime={parseLenientDateTime}
                     onCommit={(formatted) => {
-                        sheetRef.current.setValueFromCoords(COL.TIME, activeTimeCell.rowIdx, formatted, true);
+                        sheetRef.current.setValueFromCoords(COL.PUBLISH_AT, activeDateTimeCell.rowIdx, formatted, true);
                         syncValidation();
                     }}
-                    onClose={() => setActiveTimeCell(null)}
+                    onClose={() => setActiveDateTimeCell(null)}
                 />
             )}
 
