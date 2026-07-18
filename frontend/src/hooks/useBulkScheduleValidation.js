@@ -41,6 +41,26 @@ export default function useBulkScheduleValidation(modules, existingItems = []) {
         [modules]
     );
 
+    const allExistingContent = useMemo(() => {
+        const contentMap = new Map();
+        
+        // Add items from existingItems (scheduled items endpoint)
+        existingItems.forEach(item => {
+            if (item.id) contentMap.set(item.id, item);
+        });
+        
+        // Add all content items from modules
+        modules.forEach(m => {
+            if (m.content_items && Array.isArray(m.content_items)) {
+                m.content_items.forEach(item => {
+                    if (item.id) contentMap.set(item.id, item);
+                });
+            }
+        });
+        
+        return Array.from(contentMap.values());
+    }, [modules, existingItems]);
+
     const resolveModule = useCallback((rawTitle) => {
         if (!rawTitle?.trim()) return null;
         return modules.find(
@@ -121,8 +141,8 @@ export default function useBulkScheduleValidation(modules, existingItems = []) {
             // Batch-level duplicate check by video ID (ignores tracking params)
             const thisVideoId = extractYouTubeVideoId(url);
             if (thisVideoId) {
-                // Check against existing items (scheduled/published)
-                const existsInDb = existingItems.some(i => extractYouTubeVideoId(i.embed_url) === thisVideoId);
+                // Check against all existing content (scheduled/published)
+                const existsInDb = allExistingContent.some(i => extractYouTubeVideoId(i.embed_url) === thisVideoId);
                 if (existsInDb) {
                     errors.embed_url = 'This YouTube video is already scheduled or uploaded.';
                 } else {
@@ -162,7 +182,7 @@ export default function useBulkScheduleValidation(modules, existingItems = []) {
                     const dateString = `${year}-${month}-${day}`;
                     
                     // 1. Check existing items
-                    const existsInDb = existingItems.some(i => {
+                    const existsInDb = allExistingContent.some(i => {
                         let dateStr = null;
                         if ((i.status === 'published' || i.status === 'UPLOADED') && i.published_at) {
                             dateStr = i.published_at;
@@ -203,7 +223,7 @@ export default function useBulkScheduleValidation(modules, existingItems = []) {
         const status = Object.keys(errors).length > 0 ? 'Error' : 'Valid';
 
         return { status, errors, warnings, targets, parsedDate };
-    }, [resolveModule, buildTargetsString, parseLenientDate, existingItems]);
+    }, [resolveModule, buildTargetsString, parseLenientDate, allExistingContent]);
 
     /**
      * Validate every row in a batch.
@@ -222,5 +242,5 @@ export default function useBulkScheduleValidation(modules, existingItems = []) {
         });
     }, [validateRow]);
 
-    return { validateAll, validateRow, resolveModule, buildTargetsString, moduleTitles, parseLenientDate };
+    return { validateAll, validateRow, resolveModule, buildTargetsString, moduleTitles, parseLenientDate, allExistingContent };
 }

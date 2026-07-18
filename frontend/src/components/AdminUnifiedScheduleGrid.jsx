@@ -109,7 +109,7 @@ const AdminUnifiedScheduleGrid = ({ items, allFetchedItems, showDrafts = true, o
     const [modalSubmitting, setModalSubmitting] = useState(false);
     const triggerCellRef = useRef(null);
 
-    const { validateAll, resolveModule, parseLenientDate } = useBulkScheduleValidation(modules, allFetchedItems || items);
+    const { validateAll, resolveModule, parseLenientDate, allExistingContent } = useBulkScheduleValidation(modules, allFetchedItems || items);
 
     // Fetch initial data
     const fetchModules = async () => {
@@ -253,8 +253,7 @@ const AdminUnifiedScheduleGrid = ({ items, allFetchedItems, showDrafts = true, o
             } else {
                 const newId = extractYouTubeVideoId(newValue);
                 if (newId) {
-                    const checkItems = allFetchedItems || items;
-                    const isDuplicate = checkItems.some(it => it.id !== id && extractYouTubeVideoId(it.embed_url) === newId);
+                    const isDuplicate = allExistingContent.some(it => it.id !== id && extractYouTubeVideoId(it.embed_url) === newId);
                     if (isDuplicate) {
                         errorMsg = "This YouTube video is already scheduled or uploaded.";
                     }
