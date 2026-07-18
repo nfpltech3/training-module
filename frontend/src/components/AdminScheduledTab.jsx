@@ -9,7 +9,7 @@ export default function AdminScheduledTab() {
     const [items, setItems] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
-
+    const [activeTab, setActiveTab] = useState('scheduled'); // 'scheduled' or 'uploaded'
 
     // Refs and UI state
     const [toastMessage, setToastMessage] = useState('');
@@ -40,9 +40,38 @@ export default function AdminScheduledTab() {
         );
     }
 
+    const filteredItems = items.filter(item => {
+        const isUploaded = item.status === 'published' || item.status === 'UPLOADED';
+        if (activeTab === 'uploaded') return isUploaded;
+        return !isUploaded;
+    });
+
     return (
         <div className="space-y-6 animate-in fade-in duration-300">
             {/* Header removed as requested */}
+            
+            <div className="flex space-x-1 bg-slate-100 p-1 rounded-lg w-fit">
+                <button
+                    onClick={() => setActiveTab('scheduled')}
+                    className={`px-4 py-2 text-sm font-medium rounded-md transition-all duration-200 ${
+                        activeTab === 'scheduled'
+                            ? 'bg-white text-blue-600 shadow-sm'
+                            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
+                    }`}
+                >
+                    Scheduled Content
+                </button>
+                <button
+                    onClick={() => setActiveTab('uploaded')}
+                    className={`px-4 py-2 text-sm font-medium rounded-md transition-all duration-200 ${
+                        activeTab === 'uploaded'
+                            ? 'bg-white text-blue-600 shadow-sm'
+                            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
+                    }`}
+                >
+                    Uploaded Content
+                </button>
+            </div>
 
             {error && (
                 <div className="p-4 bg-red-50 text-red-600 rounded-xl border border-red-200 text-sm font-medium flex items-center gap-2">
@@ -52,7 +81,9 @@ export default function AdminScheduledTab() {
             )}
 
             <AdminUnifiedScheduleGrid 
-                items={items}
+                items={filteredItems}
+                allFetchedItems={items}
+                showDrafts={activeTab === 'scheduled'}
                 onSuccess={(count) => {
                     fetchScheduled(false);
                     if (count > 0) {

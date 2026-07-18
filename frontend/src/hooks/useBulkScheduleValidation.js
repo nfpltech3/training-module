@@ -84,52 +84,14 @@ export default function useBulkScheduleValidation(modules, existingItems = []) {
         return null;
     }, []);
 
-    /**
-     * Parse time strings into a Date object (only hours/minutes matter).
-     *
-     * Accepts:
-     *   - 4:30 PM, 4:30PM, 4:30P, 4:30p  (12h with meridiem, flexible)
-     *   - 16:30                             (24h)
-     *
-     * Normalization pipeline:
-     *   1. Trim + uppercase
-     *   2. Single-letter meridiem → full: "4:23P" → "4:23 PM"
-     *   3. Missing space before meridiem: "4:23PM" → "4:23 PM"
-     *   4. Parse against ['h:mm a', 'H:mm', 'HH:mm']
-     */
-    const parseLenientTime = useCallback((timeStr) => {
-        if (!timeStr) return null;
-        let str = timeStr.trim().toUpperCase();
-        if (!str) return null;
 
-        // Step 1: Single-letter meridiem → full meridiem
-        // "4:23P" → "4:23 PM", "4:23A" → "4:23 AM"
-        if (str.match(/\d[AP]$/)) {
-            str = str.replace(/([AP])$/, ' $1M');
-        }
-        // Step 2: Missing space before full AM/PM
-        // "4:23PM" → "4:23 PM"
-        if (str.match(/\d[AP]M$/)) {
-            str = str.replace(/([AP]M)$/, ' $1');
-        }
-
-        const formats = ['h:mm a', 'H:mm', 'HH:mm'];
-        
-        for (const fmt of formats) {
-            const parsed = parse(str, fmt, new Date());
-            if (!isNaN(parsed)) {
-                return parsed;
-            }
-        }
-        return null;
-    }, []);
 
     /**
      * Validate a single row. Returns a field-to-error mapping.
      */
     const validateRow = useCallback((row, allRows = []) => {
         const isEmpty = !row.title && !row.embed_url && !row.module_title
-            && !row.publish_date && !row.publish_time && !row.description;
+            && !row.publish_date && !row.description;
         if (isEmpty) {
             return { status: 'Blank', errors: {}, warnings: {}, targets: '', parsedDate: null };
         }
@@ -169,45 +131,70 @@ export default function useBulkScheduleValidation(modules, existingItems = []) {
                         return extractYouTubeVideoId(r.embed_url.trim()) === thisVideoId;
                     });
                     if (dupes.length > 1) {
-                        warnings.embed_url = 'Duplicate YouTube video in batch.';
+                        errors.embed_url = 'Duplicate YouTube video in batch.';
                     }
                 }
             }
         }
 
-        // --- Date / Time ---
+        // --- Date ---
         let parsedDate = null;
         let pDate = null;
-        let pTime = null;
 
         if (!row.publish_date?.trim()) {
             errors.publish_date = 'Publish Date is required.';
         } else {
             pDate = parseLenientDate(row.publish_date);
-            if (!pDate) errors.publish_date = 'Invalid date — use DD-MMM-YYYY (e.g. 08-Jul-2026).';
-        }
-
-        if (!row.publish_time?.trim()) {
-            errors.publish_time = 'Publish Time is required.';
-        } else {
-            pTime = parseLenientTime(row.publish_time);
-            if (!pTime) errors.publish_time = 'Invalid time — use H:MM AM/PM (e.g. 4:30 PM).';
-        }
-
-        if (pDate && pTime) {
-            const year = pDate.getFullYear();
-            const month = String(pDate.getMonth() + 1).padStart(2, '0');
-            const day = String(pDate.getDate()).padStart(2, '0');
-            const hour = String(pTime.getHours()).padStart(2, '0');
-            const minute = String(pTime.getMinutes()).padStart(2, '0');
-            
-            // Force the time to be treated as IST (+05:30) regardless of the browser's local timezone.
-            const isoStringIST = `${year}-${month}-${day}T${hour}:${minute}:00+05:30`;
-            parsedDate = new Date(isoStringIST);
-            
-            if (!isFuture(parsedDate)) {
-                errors.publish_date = 'Scheduled time must be in the future.';
-                errors.publish_time = 'Scheduled time must be in the future.';
+            if (!pDate) {
+                errors.publish_date = 'Invalid date — use DD-MMM-YYYY (e.g. 08-Jul-2026).';
+            } else {
+                const year = pDate.getFullYear();
+                const month = String(pDate.getMonth() + 1).padStart(2, '0');
+                const day = String(pDate.getDate()).padStart(2, '0');
+                
+                // Force the time to be treated as IST (+05:30) at 12:00 PM.
+                const isoStringIST = `${year}-${month}-${day}T12:00:00+05:30`;
+                parsedDate = new Date(isoStringIST);
+                
+                if (!isFuture(parsedDate)) {
+                    errors.publish_date = 'Scheduled date must be in the future.';
+                } else {
+                    const dateString = `${year}-${month}-${day}`;
+                    
+                    // 1. Check existing items
+                    const existsInDb = existingItems.some(i => {
+                        let dateStr = null;
+                        if ((i.status === 'published' || i.status === 'UPLOADED') && i.published_at) {
+                            dateStr = i.published_at;
+                        } else if (i.scheduled_publish_at) {
+                            dateStr = i.scheduled_publish_at;
+                        }
+                        if (!dateStr) return false;
+                        
+                        // Assumes dateStr is ISO string (e.g., "2026-07-08T06:30:00.000Z")
+                        // which translates to 12 PM IST on the same calendar day.
+                        return dateStr.substring(0, 10) === dateString;
+                    });
+                    
+                    if (existsInDb) {
+                        errors.publish_date = 'A video is already scheduled or uploaded for this day.';
+                    } else {
+                        // 2. Check current batch (allRows)
+                        const dupesInBatch = allRows.filter(r => {
+                            if (!r.publish_date?.trim()) return false;
+                            const rDate = parseLenientDate(r.publish_date);
+                            if (!rDate) return false;
+                            const rYear = rDate.getFullYear();
+                            const rMonth = String(rDate.getMonth() + 1).padStart(2, '0');
+                            const rDay = String(rDate.getDate()).padStart(2, '0');
+                            return `${rYear}-${rMonth}-${rDay}` === dateString;
+                        });
+                        
+                        if (dupesInBatch.length > 1) {
+                            errors.publish_date = 'Multiple videos are scheduled for the same day in this batch.';
+                        }
+                    }
+                }
             }
         }
 
@@ -216,7 +203,7 @@ export default function useBulkScheduleValidation(modules, existingItems = []) {
         const status = Object.keys(errors).length > 0 ? 'Error' : 'Valid';
 
         return { status, errors, warnings, targets, parsedDate };
-    }, [resolveModule, buildTargetsString, parseLenientDate, parseLenientTime, existingItems]);
+    }, [resolveModule, buildTargetsString, parseLenientDate, existingItems]);
 
     /**
      * Validate every row in a batch.
@@ -235,5 +222,5 @@ export default function useBulkScheduleValidation(modules, existingItems = []) {
         });
     }, [validateRow]);
 
-    return { validateAll, validateRow, resolveModule, buildTargetsString, moduleTitles, parseLenientDate, parseLenientTime };
+    return { validateAll, validateRow, resolveModule, buildTargetsString, moduleTitles, parseLenientDate };
 }

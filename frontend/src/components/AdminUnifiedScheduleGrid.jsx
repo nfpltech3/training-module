@@ -63,11 +63,10 @@ const COL = {
     YOUTUBE: 2,
     MODULE: 3,
     DATE: 4,
-    TIME: 5,
-    STATUS: 6,
-    ID: 7,
-    DEPS: 8,
-    ROLES: 9
+    STATUS: 5,
+    ID: 6,
+    DEPS: 7,
+    ROLES: 8
 };
 
 const FIELD_TO_COL = {
@@ -75,14 +74,12 @@ const FIELD_TO_COL = {
     description: COL.DESCRIPTION,
     embed_url: COL.YOUTUBE,
     module_title: COL.MODULE,
-    publish_date: COL.DATE,
-    publish_time: COL.TIME
+    publish_date: COL.DATE
 };
 
 const INITIAL_ROW_COUNT = 15;
-const CREATE_MODULE_OPTION = '+ Create new module';
 
-const AdminUnifiedScheduleGrid = ({ items, onSuccess }) => {
+const AdminUnifiedScheduleGrid = ({ items, allFetchedItems, showDrafts = true, onSuccess }) => {
     const containerRef = useRef(null);
     const sheetRef = useRef(null);
     const isValidatingRef = useRef(false);
@@ -112,7 +109,7 @@ const AdminUnifiedScheduleGrid = ({ items, onSuccess }) => {
     const [modalSubmitting, setModalSubmitting] = useState(false);
     const triggerCellRef = useRef(null);
 
-    const { validateAll, resolveModule, parseLenientDate, parseLenientTime } = useBulkScheduleValidation(modules, items);
+    const { validateAll, resolveModule, parseLenientDate } = useBulkScheduleValidation(modules, allFetchedItems || items);
 
     // Fetch initial data
     const fetchModules = async () => {
@@ -161,7 +158,6 @@ const AdminUnifiedScheduleGrid = ({ items, onSuccess }) => {
             const hasTz = displayDateStr.endsWith('Z') || /[+-]\d{2}:?\d{2}$/.test(displayDateStr);
             const dateObj = new Date(displayDateStr + (hasTz ? '' : 'Z'));
             publishDate = formatInTimeZone(dateObj, IST_TIMEZONE, 'EEE, dd-MMM-yyyy');
-            publishTime = formatInTimeZone(dateObj, IST_TIMEZONE, 'h:mm a');
         }
 
         const statusHtml = isPublished
@@ -174,11 +170,10 @@ const AdminUnifiedScheduleGrid = ({ items, onSuccess }) => {
             item.embed_url || '',
             item.module_title || '',
             publishDate,
-            publishTime,
             statusHtml,
-            item.id, // Hidden ID column [7]
-            JSON.stringify(item.department_slugs || []), // Hidden deps [8]
-            JSON.stringify(item.roles || []) // Hidden roles [9]
+            item.id, // Hidden ID column [6]
+            JSON.stringify(item.department_slugs || []), // Hidden deps [7]
+            JSON.stringify(item.roles || []) // Hidden roles [8]
         ];
     }, []);
 
@@ -191,19 +186,20 @@ const AdminUnifiedScheduleGrid = ({ items, onSuccess }) => {
             data.push(formatRowData(item));
         });
 
-        if (existingDrafts && existingDrafts.length > 0) {
-            // Restore exact draft content (including completely blank rows at the end)
-            data.push(...existingDrafts);
-        } else {
-            // Initial blank draft rows with 12:30 PM default for Publish Time only on the first draft row
-            for (let i = 0; i < INITIAL_ROW_COUNT; i++) {
-                const defaultTime = i === 0 ? '12:30 PM' : '';
-                data.push(['', '', '', '', '', defaultTime, '', '', '', '']);
+        if (showDrafts) {
+            if (existingDrafts && existingDrafts.length > 0) {
+                // Restore exact draft content (including completely blank rows at the end)
+                data.push(...existingDrafts);
+            } else {
+                // Initial blank draft rows
+                for (let i = 0; i < INITIAL_ROW_COUNT; i++) {
+                    data.push(['', '', '', '', '', '', '', '', '']);
+                }
             }
         }
 
         return data;
-    }, [items, formatRowData]);
+    }, [items, formatRowData, showDrafts]);
 
     // Helper: read draft rows as plain objects
     const readDraftRows = useCallback(() => {
@@ -217,7 +213,6 @@ const AdminUnifiedScheduleGrid = ({ items, onSuccess }) => {
             embed_url: row[COL.YOUTUBE] || '',
             module_title: row[COL.MODULE] || '',
             publish_date: row[COL.DATE] || '',
-            publish_time: row[COL.TIME] || '',
             _targets: ''
         }));
     }, [items.length]);
@@ -258,7 +253,8 @@ const AdminUnifiedScheduleGrid = ({ items, onSuccess }) => {
             } else {
                 const newId = extractYouTubeVideoId(newValue);
                 if (newId) {
-                    const isDuplicate = items.some((it, i) => i !== rowIdx && extractYouTubeVideoId(it.embed_url) === newId);
+                    const checkItems = allFetchedItems || items;
+                    const isDuplicate = checkItems.some(it => it.id !== id && extractYouTubeVideoId(it.embed_url) === newId);
                     if (isDuplicate) {
                         errorMsg = "This YouTube video is already scheduled or uploaded.";
                     }
@@ -274,29 +270,24 @@ const AdminUnifiedScheduleGrid = ({ items, onSuccess }) => {
                 updatePayload.module_id = resolved.id;
             }
         }
-        else if (colIdx === COL.DATE || colIdx === COL.TIME) {
-            const pDate = parseLenientDate(rowData[COL.DATE]);
-            const pTime = parseLenientTime(rowData[COL.TIME]);
+        else if (colIdx === COL.DATE) {
+            const pDate = parseLenientDate(newValue);
             
-            if (!pDate || !pTime) {
-                errorMsg = "Date and time are required for scheduled rows.";
+            if (!pDate) {
+                errorMsg = "Date is required for scheduled rows.";
             } else {
                 const year = pDate.getFullYear();
                 const month = String(pDate.getMonth() + 1).padStart(2, '0');
                 const day = String(pDate.getDate()).padStart(2, '0');
-                const hour = String(pTime.getHours()).padStart(2, '0');
-                const minute = String(pTime.getMinutes()).padStart(2, '0');
-                const isoStringIST = `${year}-${month}-${day}T${hour}:${minute}:00+05:30`;
+                const isoStringIST = `${year}-${month}-${day}T12:00:00+05:30`;
                 const parsedDate = new Date(isoStringIST);
                 
                 if (isFuture(parsedDate)) {
                     updatePayload.scheduled_publish_at = parsedDate.toISOString();
                     if (sheetRef.current) {
-                        ['DATE', 'TIME'].forEach(c => {
-                            const cellName = jspreadsheet.getColumnNameFromId([COL[c], rowIdx]);
-                            sheetRef.current.setStyle(cellName, 'background-color', '');
-                            sheetRef.current.setComments(cellName, '');
-                        });
+                        const cellName = jspreadsheet.getColumnNameFromId([COL.DATE, rowIdx]);
+                        sheetRef.current.setStyle(cellName, 'background-color', '');
+                        sheetRef.current.setComments(cellName, '');
                     }
                 } else {
                     errorMsg = "Scheduled time must be in the future.";
@@ -319,7 +310,7 @@ const AdminUnifiedScheduleGrid = ({ items, onSuccess }) => {
                 setInvalid(e.response?.data?.detail || "Failed to save changes on server.");
             }
         }
-    }, [resolveModule, parseLenientDate, parseLenientTime, items]);
+    }, [resolveModule, parseLenientDate, items]);
 
     const handleSingleSchedule = useCallback(async (rowIdx) => {
         if (submitting) return;
@@ -380,11 +371,9 @@ const AdminUnifiedScheduleGrid = ({ items, onSuccess }) => {
             validated.forEach((row) => {
                 if (row._status === 'Valid') {
                     vCount++;
-                    const validHtml = `<button class="schedule-single-btn" data-row="${row._rowIndex}" style="background-color:#2563eb;color:white;border:none;border-radius:4px;padding:4px 8px;font-size:12px;cursor:pointer;display:flex;align-items:center;gap:4px;width:100%;justify-content:center;font-family:inherit;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg> Schedule</button>`;
-                    sheetRef.current.setValueFromCoords(COL.STATUS, row._rowIndex, validHtml, true);
+                    sheetRef.current.setValueFromCoords(COL.STATUS, row._rowIndex, '✓', true);
                 } else if (row._status === 'Error') {
-                    const errorHtml = `<div style="color:#9ca3af; display:flex; align-items:center; justify-content:center; cursor:not-allowed;" title="Fix errors to schedule"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg></div>`;
-                    sheetRef.current.setValueFromCoords(COL.STATUS, row._rowIndex, errorHtml, true);
+                    sheetRef.current.setValueFromCoords(COL.STATUS, row._rowIndex, '⚠', true);
                     Object.entries(row._errors).forEach(([field, msg]) => {
                         const colIdx = FIELD_TO_COL[field];
                         if (colIdx !== undefined) {
@@ -422,7 +411,7 @@ const AdminUnifiedScheduleGrid = ({ items, onSuccess }) => {
         if (containerRef.current) containerRef.current.innerHTML = '';
 
         const data = generateGridData(existingDrafts);
-        const moduleTitles = [...modules.map(m => m.title), CREATE_MODULE_OPTION];
+        const moduleTitles = modules.map(m => m.title);
 
         // Reset draft selections if items change (re-hydration)
         setSelectedDraftRows(new Set());
@@ -437,11 +426,10 @@ const AdminUnifiedScheduleGrid = ({ items, onSuccess }) => {
                 { type: 'text', title: 'YouTube Link', width: 220 },
                 { type: 'dropdown', title: 'Module', width: 160, source: moduleTitles },
                 { type: 'calendar', title: 'Publish Date', width: 150, options: { format: 'DD-MMM-YYYY' } },
-                { type: 'text', title: 'Publish Time', width: 100 },
                 { type: 'html', title: 'Status', width: 120, readOnly: true },
-                { type: 'hidden', title: 'ID' }, // 7
-                { type: 'hidden', title: 'Deps' }, // 8
-                { type: 'hidden', title: 'Roles' } // 9
+                { type: 'hidden', title: 'ID' }, // 6
+                { type: 'hidden', title: 'Deps' }, // 7
+                { type: 'hidden', title: 'Roles' } // 8
             ],
             freezeColumns: 2,
             allowInsertRow: true,
@@ -485,32 +473,12 @@ const AdminUnifiedScheduleGrid = ({ items, onSuccess }) => {
                     cell.parentElement.classList.remove('scheduled-row');
                 }
 
-                // YouTube cell: [🔗 icon] + plain text, always both present
+                // YouTube cell styling
                 if (colIdx === COL.YOUTUBE) {
-                    // Remove any stale icon before re-adding
-                    const oldIcon = cell.querySelector('.yt-open-icon');
-                    if (oldIcon) oldIcon.remove();
-
-                    if (val && (val.includes('youtube.com/') || val.includes('youtu.be/'))) {
+                    if (val && (typeof val === 'string') && (val.includes('youtube.com/') || val.includes('youtu.be/'))) {
                         cell.style.color = '#2563eb';
-
-                        const icon = document.createElement('span');
-                        icon.className = 'yt-open-icon';
-                        icon.textContent = '🔗';
-                        icon.title = 'Open in YouTube';
-                        icon.style.cssText = 'cursor:pointer; font-size:12px; margin-right:4px; opacity:0.6; user-select:none; flex-shrink:0;';
-                        icon.addEventListener('mousedown', (e) => {
-                            e.stopPropagation();
-                            e.preventDefault();
-                            window.open(val, '_blank', 'noopener,noreferrer');
-                        });
-                        cell.insertBefore(icon, cell.firstChild);
-                        cell.style.display = 'flex';
-                        cell.style.alignItems = 'center';
                     } else {
                         cell.style.color = '';
-                        cell.style.display = '';
-                        cell.style.alignItems = '';
                     }
                 }
 
@@ -534,15 +502,15 @@ const AdminUnifiedScheduleGrid = ({ items, onSuccess }) => {
                         const rowData = sheetRef.current ? sheetRef.current.getRowData(row) : data[row];
                         if (rowData) {
                             try {
-                                const deps = JSON.parse(rowData[8] || '[]');
-                                const rols = JSON.parse(rowData[9] || '[]');
+                                const deps = JSON.parse(rowData[7] || '[]');
+                                const rols = JSON.parse(rowData[8] || '[]');
                                 tooltipText = [...deps.map(d => d.toUpperCase()), ...rols.map(r => r.name.toUpperCase())].join(', ');
                             } catch {
                                 // Ignore
                             }
                         }
                     } else {
-                        if (val && val !== CREATE_MODULE_OPTION) {
+                        if (val) {
                             const mod = resolveModule(val);
                             if (mod) {
                                 const deps = mod.department_slugs || [];
@@ -587,9 +555,6 @@ const AdminUnifiedScheduleGrid = ({ items, onSuccess }) => {
                     if (colIdx === COL.DATE) {
                         const pDate = parseLenientDate(value);
                         if (pDate) return format(pDate, 'EEE, dd-MMM-yyyy');
-                    } else if (colIdx === COL.TIME) {
-                        const pTime = parseLenientTime(value);
-                        if (pTime) return format(pTime, 'h:mm a');
                     }
                 }
                 
@@ -640,13 +605,7 @@ const AdminUnifiedScheduleGrid = ({ items, onSuccess }) => {
 
                 // New Entries: Validation & Module Creation
                 if (rowIdx >= items.length) {
-                    if (colIdx === COL.MODULE && newValue === CREATE_MODULE_OPTION) {
-                        sheetRef.current.setValueFromCoords(x, y, '', true);
-                        triggerCellRef.current = { x: parseInt(x, 10), y: parseInt(y, 10) };
-                        setIsCreateModalOpen(true);
-                    } else {
-                        runValidation();
-                    }
+                    runValidation();
                 }
             },
             oneditionstart: function(el, td, x, y) {
@@ -676,7 +635,7 @@ const AdminUnifiedScheduleGrid = ({ items, onSuccess }) => {
                 if (!shouldClearDraftsRef.current) {
                     const raw = sheetRef.current.getData();
                     // Save rows that have NO ID (Drafts)
-                    draftRowsRef.current = raw.filter(r => !r[7]);
+                    draftRowsRef.current = raw.filter(r => !r[6]);
                 } else {
                     draftRowsRef.current = [];
                     shouldClearDraftsRef.current = false;
@@ -686,38 +645,14 @@ const AdminUnifiedScheduleGrid = ({ items, onSuccess }) => {
                 sheetRef.current = null;
             }
         };
-    }, [loading, modules, items, generateGridData, scheduleValidation, resolveModule, parseLenientDate, parseLenientTime, handleScheduledRowEdit]);
+    }, [loading, modules, items, generateGridData, scheduleValidation, resolveModule, parseLenientDate, handleScheduledRowEdit]);
 
     // Update dynamic module dropdown source
     useEffect(() => {
         if (!sheetRef.current) return;
-        const moduleTitles = [...modules.map(m => m.title), CREATE_MODULE_OPTION];
+        const moduleTitles = modules.map(m => m.title);
         sheetRef.current.options.columns[COL.MODULE].source = moduleTitles;
     }, [modules]);
-
-    // Attach click handler for custom HTML buttons inside the grid
-    useEffect(() => {
-        const handleGridClick = (e) => {
-            const target = e.target instanceof Element ? e.target : e.target.parentElement;
-            if (!target) return;
-
-            const btn = target.closest('.schedule-single-btn');
-            if (btn) {
-                const rowIdx = parseInt(btn.getAttribute('data-row'), 10);
-                handleSingleSchedule(rowIdx);
-            }
-        };
-
-        const el = containerRef.current;
-        if (el) {
-            el.addEventListener('click', handleGridClick); 
-        }
-        return () => {
-            if (el) {
-                el.removeEventListener('click', handleGridClick);
-            }
-        };
-    }, [handleSingleSchedule, items.length]);
 
     const handleCreateModule = async (formData) => {
         setModalSubmitting(true);
@@ -853,31 +788,37 @@ const AdminUnifiedScheduleGrid = ({ items, onSuccess }) => {
             
             <div className="flex flex-col md:flex-row gap-4 justify-between items-center bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
                 <div>
-                    <h2 className="text-xl font-bold text-slate-800 mb-1">Scheduled Content</h2>
+                    <h2 className="text-xl font-bold text-slate-800 mb-1">
+                        {showDrafts ? "Scheduled Content" : "Uploaded Content"}
+                    </h2>
                     <p className="text-sm font-medium text-slate-500">
-                        Top rows are active scheduled content. Lower rows are drafts for scheduling.
+                        {showDrafts 
+                            ? "Videos scheduled will be automatically uploaded between 12:00 PM and 1:00 PM on the selected date."
+                            : "These videos have been successfully uploaded and are now active."}
                     </p>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-3">
-                    {totalSelected > 0 ? (
-                        <button 
-                            onClick={handleRemoveSelected} 
-                            disabled={removing} 
-                            className="px-4 py-2 text-sm font-bold text-red-600 bg-red-50 hover:bg-red-100 disabled:opacity-50 rounded-lg shadow-sm transition-all flex items-center gap-2 border border-red-200"
-                        >
-                            {removing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                            Remove {totalSelected} Selected
-                        </button>
-                    ) : (
-                        <button 
-                            onClick={handleSubmit} 
-                            disabled={validCount === 0 || submitting} 
-                            className="px-5 py-2 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:bg-slate-400 rounded-lg shadow-sm transition-all flex items-center gap-2"
-                        >
-                            {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                            Schedule {validCount} Valid Item{validCount !== 1 ? 's' : ''}
-                        </button>
+                    {showDrafts && (
+                        totalSelected > 0 ? (
+                            <button 
+                                onClick={handleRemoveSelected} 
+                                disabled={removing} 
+                                className="px-4 py-2 text-sm font-bold text-red-600 bg-red-50 hover:bg-red-100 disabled:opacity-50 rounded-lg shadow-sm transition-all flex items-center gap-2 border border-red-200"
+                            >
+                                {removing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                                Remove {totalSelected} Selected
+                            </button>
+                        ) : (
+                            <button 
+                                onClick={handleSubmit} 
+                                disabled={validCount === 0 || submitting} 
+                                className="px-5 py-2 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:bg-slate-400 rounded-lg shadow-sm transition-all flex items-center gap-2"
+                            >
+                                {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                                Schedule {validCount} Valid Item{validCount !== 1 ? 's' : ''}
+                            </button>
+                        )
                     )}
                 </div>
             </div>

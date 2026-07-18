@@ -980,26 +980,6 @@ export default function AdminModulesTab() {
                                                 Sends a notification to all assigned users when this item is published.
                                             </p>
                                         </div>
-                                        
-                                        {showScheduleInline && (
-                                            <div className="md:col-span-3 bg-slate-50 border border-slate-200 rounded-xl p-4 mt-2 animate-in fade-in slide-in-from-top-2">
-                                                <div className="flex flex-col gap-2">
-                                                    <label className="text-sm font-bold text-slate-700">Publish date & time</label>
-                                                    <input 
-                                                        type="datetime-local" 
-                                                        value={scheduleDateTime}
-                                                        onChange={(e) => setScheduleDateTime(e.target.value)}
-                                                        className="px-3 py-2 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none max-w-sm"
-                                                    />
-                                                    <p className="text-xs text-slate-500">This video will stay hidden until this date and time, then publish automatically and notify assigned users.</p>
-                                                    
-                                                    {scheduleDateTime && new Date(scheduleDateTime) <= new Date() && (
-                                                        <p className="text-xs font-semibold text-red-500 mt-1">Publish time must be in the future.</p>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        )}
-
                                         <div className="md:col-span-3 flex flex-col md:flex-row gap-2 w-full mt-4 justify-end">
                                             <button 
                                                 type="submit" disabled={isCreatingContent}
@@ -1008,31 +988,6 @@ export default function AdminModulesTab() {
                                                 {isCreatingContent ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
                                                 Publish Now
                                             </button>
-                                            
-                                            <button 
-                                                type="button" disabled={isCreatingContent || (showScheduleInline && (!scheduleDateTime || new Date(scheduleDateTime) <= new Date()))}
-                                                onClick={() => {
-                                                    if (!showScheduleInline) {
-                                                        setShowScheduleInline(true);
-                                                    } else {
-                                                        handleCreateContent(null, { status: 'scheduled', scheduled_publish_at: new Date(scheduleDateTime).toISOString() });
-                                                    }
-                                                }}
-                                                className="w-full md:w-auto px-6 py-3 md:py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition flex justify-center items-center gap-2 shadow-lg shadow-indigo-100 disabled:opacity-50"
-                                            >
-                                                {isCreatingContent ? <Loader2 className="w-4 h-4 animate-spin" /> : (showScheduleInline ? <Check className="w-4 h-4" /> : <Clock className="w-4 h-4" />)}
-                                                {showScheduleInline ? "Confirm Schedule" : "Schedule"}
-                                            </button>
-                                            
-                                            {showScheduleInline && (
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setShowScheduleInline(false)}
-                                                    className="w-full md:w-auto px-4 py-3 md:py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition"
-                                                >
-                                                    Cancel
-                                                </button>
-                                            )}
                                         </div>
                                     </div>
                                 </form>
